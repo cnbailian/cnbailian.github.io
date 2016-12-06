@@ -1,0 +1,7 @@
+缘由 学习restful过程中 记笔记不方便
+
+过程  最开始使用jq + 远程服务器   而后为了学习使用 vue+element 经朋友推荐使用后端云服务
+      vuecli脚手架不好用  改用cooking
+      manifest的配置问题折腾好久
+
+结果 https://github.com/cnbailian/box-cooking
