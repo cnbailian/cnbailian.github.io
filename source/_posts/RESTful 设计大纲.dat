@@ -14,6 +14,10 @@ http://www.infoq.com/cn/articles/understanding-restful-style/ 中文译者
 论文原文http://www.ics.uci.edu/~fielding/pubs/dissertation/top.htm
 译本http://www.infoq.com/cn/minibooks/web-based-apps-archit-design?utm_source=minibooks_about_rest-deep-dive&utm_medium=link&utm_campaign=rest-deep-dive
 
+无状态: 无状态指的是任意一个Web请求必须完全与其他请求隔离，当请求端提出请求时，请求本身包含了相应端为相应这一请求所需的全部信息。
+这一约束的出现改善了分布式系统的可见性、可靠性以及可伸缩性.
+有状态和无状态与请求本身没有多大关联，重要的是状态信息是由请求方还是响应方负责保存。
+
 RESTful:符合 REST 原则的应用程序或设计称做 RESTful。
 
 使用http请求操作资源
@@ -111,7 +115,11 @@ JSON格式输入
   作者着重提出了不要使用周期结束时的UNIX时间戳
 
 授权
-  api应该是无状态的,也就是说不应该使用cookie or session作为身份凭据.
+  REST的无状态原则 服务端不应使用coookie or session 等会话来存储客户端的信息 使用凭据来验证身份
+  虽然看上去差不多, 但是区别在于 语义不同.
+  session ID 作为一种 标识着某个会话的KEY,给服务端传递请求的语义为:请帮我取出这个状态信息,在这里,状态信息是由服务端进行存储的,所以,毫无疑问这是违反REST无状态原则的
+  而凭据呢,是服务端期待着客户端传过来的用户验证身份的凭据,是由客户端进行存储的,所以是符合REST原则的
+
   大部分情况下都应使用OAuth2.0框架,阮老师的关于OAuth2.0的博文:http://www.ruanyifeng.com/blog/2014/05/oauth_2_0.html
 
 缓存
@@ -121,6 +129,7 @@ JSON格式输入
 
 响应
   *api应始终返回正确的HTTP状态码
+  https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
   使用JSON作为唯一的返回格式
   客户端错误 400系列 返回要带有message信息:
   { 'message': 'Invalid Token' }
