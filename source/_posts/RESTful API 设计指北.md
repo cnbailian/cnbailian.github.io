@@ -2,11 +2,13 @@
 title: RESTful API 设计指北
 ---
 
-##首先理解 REST 与 RESTful
+## 首先理解 REST 与 RESTful
 
 REST 是Fielding博士在他的论文[1]中提出的一种新的架构风格,被称作表述性状态移交（Representational State Transfer）架构风格,它成为了现代 Web 架构的基础.[2]
 
 符合 REST 原则的应用程序或设计称做 RESTful.
+
+<!--more-->  
 
 **RESTful API 设计原则:**
 
