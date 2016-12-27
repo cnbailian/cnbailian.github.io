@@ -72,7 +72,7 @@ RESTful 使用HTTP动词操作资源
 
 **不被支持的HTTP动词**
 
-有些情况下会只支持GET&POST方法(HTML的FORM标签method属性),可以在头信息中加入`X-HTTP-Method-Override`来表示当前的HTTP请求或在请求参数中加入`_method`来表示当前请求(laravel框架使用的此方法)
+有些情况下会只支持GET&POST方法(HTML的FORM标签method属性),可以在头信息中加入 `X-HTTP-Method-Override` 来表示当前的HTTP请求或在请求参数中加入 `_method` 来表示当前请求(laravel框架使用的此方法)
 
 ### SSL/TLS
 
@@ -103,11 +103,11 @@ API不会是永远稳定的,版本升级的问题无法避免.
 
 **筛选**
 
-`GET /users?name=张三` - 筛选出所有`name = 张三`的用户
+`GET /users?name=张三` - 筛选出所有 `name = 张三` 的用户
 
 为了使接口调用者更加方便,可以将一些常见的查询参数使用别名表示:
 
-`GET /users/vip` - 筛选出所有`vip`用户
+`GET /users/vip` - 筛选出所有 `vip` 用户
 
 *如果业务过于复杂导致普通的查询参数无法胜任,可以试着查询参数json化,虽然不标准,但是已解决问题为主*
 
@@ -123,7 +123,7 @@ API不会是永远稳定的,版本升级的问题无法避免.
 ?sortby=level&order=asc
 ````
 
-第二种,使用`-`表示倒序,使用`,`分隔多个排序:
+第二种,使用 `-` 表示倒序,使用 `,` 分隔多个排序:
 
 ````
 ?sort=-type,created_at
@@ -131,14 +131,14 @@ API不会是永远稳定的,版本升级的问题无法避免.
 
 **分页**
 
-常见的分页解决方案有两种,第一种是传统的`offset`+`limit`:
+常见的分页解决方案有两种,第一种是传统的 `offset` + `limit` :
 
 ````
 ?offset=10 - 偏移量
 ?limit=10 - 返回数量
 ````
 
-第二种是使用游标分页,需提供`cursor`(下一页的游标) 与 `limit`:
+第二种是使用游标分页,需提供 `cursor` (下一页的游标) 与 `limit` :
 
 ````
 ?cursor=2015-01-01 15:20:30 - 使用时间作为游标
@@ -156,9 +156,9 @@ API不会是永远稳定的,版本升级的问题无法避免.
 
 *在实践中发现 重复数据 的问题有些严重,我的解决方案是增加首次分页的时间作为查询条件,取所有小于这个时间的数据.缺点是会造成后续新增数据只有在刷新后才显示,*
 
-**exceptional 返回时详细描述**
+### exceptional 返回时详细描述**
 
-**HATEOAS**
+### HATEOAS
 
 HATEOAS(超媒体即应用状态引擎 Hypermedia as the Engine of Application State), REST的重要原则之一
 
