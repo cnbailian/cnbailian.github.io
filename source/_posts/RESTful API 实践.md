@@ -1,5 +1,5 @@
 ---
-title: RESTful API 设计指北
+title: RESTful API 实践
 ---
 
 ## 首先理解 REST 与 RESTful
@@ -8,7 +8,7 @@ REST 是Fielding博士在他的论文[1]中提出的一种新的架构风格,被
 
 符合 REST 原则的应用程序或设计称做 RESTful.
 
-<!--more-->  
+<!--more-->
 
 **RESTful API 设计原则:**
 
@@ -36,7 +36,7 @@ REST 是Fielding博士在他的论文[1]中提出的一种新的架构风格,被
 
  - REST的几个特征保证了RESTful API的低耦合性, 对于资源（Resource）的抽象、统一接口（Uniform Interface）、超文本驱动（Hypertext Driven）[3]
 
-## RESTful API设计细节
+## RESTful API 实践
 
 ### 请求
 
@@ -44,10 +44,10 @@ RESTful 使用HTTP动词操作资源
 
 **常用的HTTP动词有下面四个[4]**
 
-1. GET - 用于获取资源信息
-2. POST - 用于新建或修改资源
-3. PUT - 用于修改资源
-4. DELETE - 用于删除资源
+1. `GET` - 用于获取资源信息
+2. `POST` - 用于新建或修改资源
+3. `PUT` - 用于新建或修改资源
+4. `DELETE` - 用于删除资源
 
 **幂等性(Idempotent)**
 
@@ -61,18 +61,18 @@ RESTful 使用HTTP动词操作资源
 
 **常见操作示例**
 
-- GET /user - 获取用户列表
-- GET /user/uid - 获取指定用户
-- GET /user/uid/comments- 获取指定用户的评论
-- POST /user - 新建一个用户
-- PUT /user/uid - 修改指定用户
-- DELETE /user/uid - 删除指定用户
+- `GET /user` - 获取用户列表
+- `GET /user/uid` - 获取指定用户
+- `GET /user/uid/comments` - 获取指定用户的评论
+- `POST /user` - 新建一个用户
+- `PUT /user/uid` - 修改指定用户
+- `DELETE /user/uid` - 删除指定用户
 
 *URL的设计原则:资源不能使用动词、路径不宜过深,二三层即可,过深可以使用参数的方式来代表、永远使用最短的路径*
 
 **不被支持的HTTP动词**
 
-有些情况下会只支持GET&POST方法(HTML的FORM标签method属性),可以在头信息中加入X-HTTP-Method-Override来表示当前的HTTP请求或在请求参数中加入_method来表示当前请求(laravel框架使用的此方法)
+有些情况下会只支持GET&POST方法(HTML的FORM标签method属性),可以在头信息中加入`X-HTTP-Method-Override`来表示当前的HTTP请求或在请求参数中加入`_method`来表示当前请求(laravel框架使用的此方法)
 
 ### SSL/TLS
 
@@ -84,7 +84,7 @@ RESTful 使用HTTP动词操作资源
 
 文档应简单易懂并具有良好的示例,粘贴至浏览器能直接使用
 
-这里推荐使用Postman,一个很好用的chrome应用
+这里推荐使用Postman,很好用的调试RESTful API的chrome应用
 
 ### 版本号
 
@@ -97,8 +97,78 @@ API不会是永远稳定的,版本升级的问题无法避免.
 1. 放入URL中. 优点是更加直观些
 2. 放入Header 信息中.URL更加优雅,api.github.com采用此方法
 
-### 排序 & 筛选 & 分页
+### 信息过滤
 
-未完待续......
+包括 筛选、排序、分页等
 
+**筛选**
+
+`GET /users?name=张三` - 筛选出所有`name = 张三`的用户
+
+为了使接口调用者更加方便,可以将一些常见的查询参数使用别名表示:
+
+`GET /users/vip` - 筛选出所有`vip`用户
+
+*如果业务过于复杂导致普通的查询参数无法胜任,可以试着查询参数json化,虽然不标准,但是已解决问题为主*
+
+**限制返回字段**
+
+`?fields=id,name`
+
+**排序**
+
+两种解决方案,第一种是拆分为两个参数:
+
+````
+?sortby=level&order=asc
+````
+
+第二种,使用`-`表示倒序,使用`,`分隔多个排序:
+
+````
+?sort=-type,created_at
+````
+
+**分页**
+
+常见的分页解决方案有两种,第一种是传统的`offset`+`limit`:
+
+````
+?offset=10 - 偏移量
+?limit=10 - 返回数量
+````
+
+第二种是使用游标分页,需提供`cursor`(下一页的游标) 与 `limit`:
+
+````
+?cursor=2015-01-01 15:20:30 - 使用时间作为游标
+?limit=10 - 返回数量
+````
+
+总结一下传统分页的特点:
+
+1. 传统分页可以进行跳页
+2. 会出现重复数据问题
+3. 当`offset`数值较大时,效率降低明显
+4. 分页不涉及排序
+
+我认为使用游标的分页方式受众面比较小,例如想要作为游标的字段有着重复的数据,不能适应负责的排序等.多数情况下,不推荐使用
+
+*在实践中发现 重复数据 的问题有些严重,我的解决方案是增加首次分页的时间作为查询条件,取所有小于这个时间的数据.缺点是会造成后续新增数据只有在刷新后才显示,*
+
+**exceptional 返回时详细描述**
+
+**HATEOAS**
+
+HATEOAS(超媒体即应用状态引擎 Hypermedia as the Engine of Application State), REST的重要原则之一
+
+在 RESTful 中表现为: 返回结果中提供链接，连向其他API方法,比如,访问 api.github.com 
+
+````json
+{
+    "current_user_url": "https://api.github.com/user",
+}
+````
+
+理应作为RESTful的设计原则之一,但是在实践中的效果来看有些鸡肋.
 
