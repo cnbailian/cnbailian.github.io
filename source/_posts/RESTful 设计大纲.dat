@@ -130,6 +130,7 @@ JSON格式输入
     X-Rate-Limit-Reset - 周期剩余时间
   更多关于返回信息讨论:http://stackoverflow.com/questions/16022624/examples-of-http-api-rate-limiting-http-response-headers
   作者着重提出了不要使用周期结束时的UNIX时间戳
+  http://www.vinaysahni.com/best-practices-for-a-pragmatic-restful-api#rate-limiting
 
 授权
   REST的无状态原则 服务端不应使用coookie or session 等会话来存储客户端的信息 使用凭据来验证身份
@@ -145,11 +146,13 @@ JSON格式输入
   Last-Modified基本与Etag相同,只是判断依据从Etag变为时间
 
 响应
-  *api应始终返回正确的HTTP状态码
+  *api应始终返回适当的HTTP状态码
   https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
   使用JSON作为唯一的返回格式
   客户端错误 400系列 返回要带有message信息:
-  { 'message': 'Invalid Token' }
+  {
+    'message': 'Invalid Token'
+  }
   有需要可以在响应内容中加入错误代码.给予客户端一个凭据展示更详细的信息,多语言等
   如果说已github的api为RESTful参考标准的话,这不符合,但会使我们的api更加友好
 
