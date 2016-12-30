@@ -2,9 +2,9 @@
 title: RESTful API 实践
 ---
 
-## 首先理解 REST 与 RESTful
+## 理解 REST 与 RESTful
 
-REST 是Fielding博士在他的论文[1]中提出的一种新的架构风格,被称作表述性状态移交（Representational State Transfer）架构风格,它成为了现代 Web 架构的基础.[2]
+REST 是Fielding博士在他的论文[[1]](#Fielding博士论文)中提出的一种新的架构风格,被称作表述性状态移交（Representational State Transfer）架构风格,它成为了现代 Web 架构的基础.[[2]](#HTTP)
 
 符合 REST 原则的应用程序或设计称做 RESTful.
 
@@ -34,7 +34,7 @@ REST 是Fielding博士在他的论文[1]中提出的一种新的架构风格,被
 
 5. 低耦合
 
- - REST的几个特征保证了RESTful API的低耦合性, 对于资源（Resource）的抽象、统一接口（Uniform Interface）、超文本驱动（Hypertext Driven）[3]
+ - REST的几个特征保证了RESTful API的低耦合性, 对于资源（Resource）的抽象、统一接口（Uniform Interface）、超文本驱动（Hypertext Driven）[[3]](#所有的HTTP动词)
 
 ## RESTful API 实践
 
@@ -42,7 +42,7 @@ REST 是Fielding博士在他的论文[1]中提出的一种新的架构风格,被
 
 RESTful 使用HTTP动词操作资源
 
-**常用的HTTP动词有下面四个[4]**
+**常用的HTTP动词有下面四个[[4]](#低耦合性)**
 
 1. `GET` - 用于获取资源信息
 2. `POST` - 用于新建或修改资源
@@ -171,12 +171,12 @@ HATEOAS(超媒体即应用状态引擎 Hypermedia as the Engine of Application S
 }
 ```
 
-理应作为RESTful的设计原则之一,也看了在API中的用处[5],但是在实践中感觉用处不是很大,碰到业务逻辑比较复杂的地方用起来也很麻烦.还是视情况应用吧
+理应作为RESTful的设计原则之一,也看了在API中的用处[[5]](#HATEOAS),但是在实践中感觉用处不是很大,碰到业务逻辑比较复杂的地方用起来也很麻烦.还是视情况应用吧
 
 ### JSON格式请求
 
 请求头的 `Content-Type` 设置为 `application/json` 告诉服务器端消息主题为 `json` 格式数据
-关于优缺点不多做描述, QuQu大神 讲解的很详细了[6]
+关于优缺点不多做描述, QuQu大神 讲解的很详细了[[6]](#JSON格式输入)
 
 ### 相关资源嵌入
 
@@ -212,7 +212,7 @@ API在使用过程中,不可避免的要遇到需要加载相关数据的情况,
 
 用户在一定时间内发出的请求次数要做出限制
 
-具体算法可以看大神博客[7]
+具体算法可以看大神博客[[7]](#流量控制与令牌桶算法)
 
 这里主要说的是 RESTful API 在这方面做出的处理
 
@@ -226,17 +226,17 @@ API在使用过程中,不可避免的要遇到需要加载相关数据的情况,
 	X-Rate-Limit-Reset - 周期剩余时间
 ```
 
-stackoverflow 上有关于这个问题的讨论[8]
+stackoverflow 上有关于这个问题的讨论[[8]](#缓存头信息返回方案)
 
-不要使用UNIX时间戳[9]
+不要使用UNIX时间戳[[9]](#为什么不要使用UNIX时间戳)
 
 ### 权限
 
 REST的重要原则之一就是无状态,所以不应该使用 `cookie` & `session` , 而是使用 凭证 来进行权限认证.
 
-对外的接口应使用 OAuth2.0 框架[10],作为API的权限控制, 对内接口也可使用简化版的 OAuth2.0
+对外的接口应使用 OAuth2.0 框架[[10]](#OAuth2.0),作为API的权限控制, 对内接口也可使用简化版的 OAuth2.0
 
-关于 为什么 `session` 是 不符合REST原则的 而 凭证 又是符合REST原则, 这里的答案可以进行参照[11]
+关于 为什么 `session` 是 不符合REST原则的 而 凭证 又是符合REST原则, 这里的答案可以进行参照[[11]](#REST无状态(stateless)原则)
 
 我的总结: 语义不同.
 
@@ -248,7 +248,7 @@ REST的重要原则之一就是无状态,所以不应该使用 `cookie` & `sessi
 
 HTTP已经为我们提供了很好的解决方案 `ETag` & `Last-Modified`
 
-这里有一片讲解 `ETag` 的文章, 非常详细[12]
+这里有一片讲解 `ETag` 的文章, 非常详细[[12]](#Etag详解)
 
 `Last-Modified` 基本与 `ETag` 相同,只是判断依据从 `ETag` 变为时间
 
@@ -321,7 +321,7 @@ callback_function({
 
  - `404 Not Found` - 请求的资源不存在 
 
- - `405 Method Not Allowed` - 不存在当前请求的HTTP方法
+ - `405 Method Not Allowed` - 不存在当前请求的HTTP动词
 
  - `410 Gone` - 请求的资源已废弃,并且没有对应新资源 (如果是转到了新的URL,应使用 `301 Moved Permanently`)
 
@@ -337,10 +337,9 @@ callback_function({
 
 ### 实践出真知
 
-在上面常见的HTTP方法中,我没有提到 `PATCH`, 是因为我在实际使用中没有碰到要划分 `PUT` 与 `PATH` 的情况,所以,觉得这个方法不是那么主要
+在上面常见的HTTP动词中,我没有提到 `PATCH`, 是因为我在实际使用中没有碰到要划分 `PUT` 与 `PATH` 的情况,所以,觉得这个方法不是那么主要
 
-客户端要求不能直接返回数组型的 JSON 数据, 要加上 KEY .有时间可以学一学,做个小APP实践一下
-
+客户端要求不能直接返回数组型的 JSON 数据, 要加上 `KEY` .有时间可以学一学,做个小APP实践一下
 
 **当你认为你的业务不属于以上HTTP动词的范畴中时**
 
@@ -350,7 +349,105 @@ callback_function({
 
 例如 : `login` 我的理解, 对于一个 API 来说, `login` 的行为在本质上是对 `凭据` 这个资源的创建,而且是幂等的
 
+**业务逻辑与代码逻辑冲突时,HTTP动词的选择**
+
+跟着业务逻辑走
+
+例如,业务的删除,在代码里的时间可能是软删除( `deleted_at =1` ),这个时候的HTTP动词一定要是 `DELETE`
+
 ### 写在最后
 
-在我看来, RESTful 真的很好, 简单直观 规范易懂 贴合web,更易于测试 等等 
-未完待续.....
+在我看来, RESTful 真的很好,简单直观,规范易懂,贴合web,更易于测试 等等等等, 但是 毕竟只是架构风格,过度纠结如何遵守规范反而是违背了设计API的初衷.
+
+我在实践中也有很多不遵守的地方,也曾经纠结过很多东西,事后证明大部分不过是浪费时间罢了.
+
+API的设计本身就是要从使用者的角度出发,如果是对外的接口,要尽量做的规范,这样能适应大多数人,对内的接口还是要多听取下使用者的意见,针对于本身的业务来进行调整.
+
+**This**
+
+本编文章是总结我对于REST与RESTful的理解,与实践结合而成.
+
+<理解 REST 与 RESTful> 一章来源与我看过博士的论文(英语不好,看的中文译本)后,融合网络上的RESTful规范理解而成
+
+<RESTful API 实践> 一章的来源: 大部分知识点源自我对于 《Best Practices for Designing a Pragmatic RESTful API》的理解,剩余部分是在网络中整理提炼出来的知识,将两者整合,应用于实践后的我的理解.
+
+**如果你认为有些地方有问题,或者歧义比较大的话,还望指出,thanks**
+
+*因为要整理的知识点很多,也很杂乱,所以写了一个chrome扩展来帮助自己做笔记,没有上架,还在完善中,有兴趣的同学可以去我的github上看down下来试一试*
+
+### 参考文章
+
+1. [Best Practices for Designing a Pragmatic RESTful API](http://www.vinaysahni.com/best-practices-for-a-pragmatic-restful-api) (本篇文章的大部分知识点来源于此,对于我理解应用RESTful有着很大的帮助)
+
+2. [架构风格与基于网络应用软件的架构设计（中文修订版）](http://www.infoq.com/cn/minibooks/web-based-apps-archit-design?utm_source=minibooks_about_rest-deep-dive&utm_medium=link&utm_campaign=rest-deep-dive) ([Fielding](https://en.wikipedia.org/wiki/Roy_Fielding)博士的论文中文版 因为英语不太好,所以没有强行去看原版)
+
+3. [Architectural Styles and the Design of Network-based Software Architectures](http://www.ics.uci.edu/~fielding/pubs/dissertation/top.htm) ([Fielding](https://en.wikipedia.org/wiki/Roy_Fielding)博士论文原版)
+
+4. [理解本真的REST架构风格](http://www.infoq.com/cn/articles/understanding-restful-style/) (帮助我理解了REST概念)
+
+5. [我所认为的RESTful API最佳实践](http://www.scienjus.com/my-restful-api-best-practices/) (找到的国内RESTful API实践中较好的一篇文章)
+
+6. [RESTful API 设计指南](http://www.ruanyifeng.com/blog/2014/05/restful_api.html) (使我了解了RESTful API,可惜东西讲解的有些少)
+
+7. [理解RESTful架构](http://www.ruanyifeng.com/blog/2011/09/restful.html) (RESTful基础)
+
+8. [理解OAuth 2.0](http://www.ruanyifeng.com/blog/2014/05/oauth_2_0.html) (理解OAuth2.0, 有这篇文章就够了)
+
+9. [对于REST中无状态(stateless)的一点认识](http://developer.51cto.com/art/200906/129424.htm) (加深了我对于 无状态 的理解)
+
+### 注
+
+##### Fielding博士论文
+
+[英文原版](http://www.ics.uci.edu/~fielding/pubs/dissertation/top.htm)
+
+[中文译版](http://www.infoq.com/cn/minibooks/web-based-apps-archit-design?utm_source=minibooks_about_rest-deep-dive&utm_medium=link&utm_campaign=rest-deep-dive)
+
+##### HTTP
+
+```
+我们在互联网工程工作组（IETF）定义了现有的超文本移交协议（HTTP/1.0）[19]，并且为 HTTP/1.1 [42] 和 URI（统一资源标识符）[21] 的新规范设计扩展。在开展这些工作的最初阶段，我就认识到需要建立一个关于 Web 的运转方式的模型。这个关于整个 Web 应用中的交互的理想化模型，被称作表述性状态移交（REST）架构风格，它成为了现代 Web 架构的基础。
+
+出自[中文译版] 结论
+```
+
+##### 低耦合性
+
+[理解本真的REST架构风格](http://www.infoq.com/cn/articles/understanding-restful-style/)
+
+REST特性讲解
+
+##### 所有的HTTP动词
+
+[ALL](https://tools.ietf.org/html/rfc2616#section-9)
+
+##### HATEOAS
+
+[在RESTFul API中使用HATEOAS的好处](http://www.infoq.com/cn/news/2009/04/hateoas-restful-api-advantages)
+
+##### JSON格式输入
+
+[QuQu大神博文](https://imququ.com/post/four-ways-to-post-data-in-http.html#toc-2)
+
+##### 流量控制与令牌桶算法
+
+[潘神- 流量控制与令牌桶算法](https://blog.jamespan.me/2015/10/19/traffic-shaping-with-token-bucket)
+
+##### 缓存头信息返回方案
+
+[讨论](http://stackoverflow.com/questions/16022624/examples-of-http-api-rate-limiting-http-response-headers)
+
+##### 为什么不要使用UNIX时间戳
+
+[为什么不要使用UNIX时间戳](http://www.vinaysahni.com/best-practices-for-a-pragmatic-restful-api#rate-limiting)
+
+##### OAuth2.0
+
+[大神博客 - 理解OAuth 2.0](http://www.ruanyifeng.com/blog/2014/05/oauth_2_0.html)
+
+##### REST无状态(stateless)原则
+[对于REST中无状态(stateless)的一点认识](http://developer.51cto.com/art/200906/129424.htm)
+
+##### Etag详解
+
+[HTTP缓存 这里主要是讲的Etag](https://developers.google.com/web/fundamentals/performance/optimizing-content-efficiency/http-caching?hl=zh-cn)
