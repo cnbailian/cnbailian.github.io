@@ -373,6 +373,8 @@ API的设计本身就是要从使用者的角度出发，如果是对外的接�
 
 *因为要整理的知识点很多，也很杂乱，所以写了一个chrome扩展来帮助自己做笔记，没有上架，还在完善中，有兴趣的同学可以去我的github上down来试一试*
 
+终于写完了,断断续续的写了好几天,在以后的工作过程中,如果还有新的内容,也会一并更新在这里
+
 ### 参考文章
 
 1. [Best Practices for Designing a Pragmatic RESTful API](http://www.vinaysahni.com/best-practices-for-a-pragmatic-restful-api) (本篇文章的大部分知识点来源于此，对于我理解应用RESTful有着很大的帮助)
