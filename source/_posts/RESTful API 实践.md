@@ -156,8 +156,6 @@ API不会是永远稳定的，版本升级的问题无法避免.
 
 *在实践中发现 重复数据 的问题有些严重，我的解决方案是增加首次分页的时间作为查询条件，取所有小于这个时间的数据.缺点是会造成后续新增数据只有在刷新后才显示，*
 
-### exceptional 返回时详细描述**
-
 ### HATEOAS
 
 HATEOAS(超媒体即应用状态引擎 Hypermedia as the Engine of Application State)， REST的重要原则之一
