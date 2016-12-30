@@ -367,9 +367,9 @@ API的设计本身就是要从使用者的角度出发,如果是对外的接口,
 
 本编文章是总结我对于REST与RESTful的理解,与实践结合而成.
 
-<理解 REST 与 RESTful> 一章来源与我看过博士的论文(英语不好,看的中文译本)后,融合网络上的RESTful规范理解而成
+《理解 REST 与 RESTful》 一章来源与我看过博士的论文(英语不好,看的中文译本)后,融合网络上的RESTful规范理解而成
 
-<RESTful API 实践> 一章的来源: 大部分知识点源自我对于 《Best Practices for Designing a Pragmatic RESTful API》的理解,剩余部分是在网络中整理提炼出来的知识,将两者整合,应用于实践后的我的理解.
+《RESTful API 实践》 一章的来源: 大部分知识点源自我对于 《Best Practices for Designing a Pragmatic RESTful API》的理解,剩余部分是在网络中整理提炼出来的知识,将两者整合,应用于实践后的我的理解.
 
 **如果你认为有些地方有问题,或者歧义比较大的话,还望指出,thanks**
 
