@@ -34,7 +34,7 @@ REST 是Fielding博士在他的论文[[1]](#Fielding博士论文)中提出的一
 
 5. 低耦合
 
- - REST的几个特征保证了RESTful API的低耦合性, 对于资源（Resource）的抽象、统一接口（Uniform Interface）、超文本驱动（Hypertext Driven）[[3]](#所有的HTTP动词)
+ - REST的几个特征保证了RESTful API的低耦合性, 对于资源（Resource）的抽象、统一接口（Uniform Interface）、超文本驱动（Hypertext Driven）[[3]](#低耦合性)
 
 ## RESTful API 实践
 
@@ -42,7 +42,7 @@ REST 是Fielding博士在他的论文[[1]](#Fielding博士论文)中提出的一
 
 RESTful 使用HTTP动词操作资源
 
-**常用的HTTP动词有下面四个[[4]](#低耦合性)**
+**常用的HTTP动词有下面四个[[4]](#所有的HTTP动词)**
 
 1. `GET` - 用于获取资源信息
 2. `POST` - 用于新建或修改资源
