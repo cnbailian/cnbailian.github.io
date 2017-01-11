@@ -9,7 +9,7 @@ layout: "about"
 代码外的生活逃不出游戏/音乐/book(大部分为小说)  现在又加上了写博客   
 
 博客用的Hexo + gihub,主题是https://github.com/imochen/hexo-theme-meizi
-博客没有名字,或者说 它的名字就是Blog
+
 
 本人 不太会表达,也不会写作,如果有错误,万望指出(这也正是我写博客的主要原因)
 
