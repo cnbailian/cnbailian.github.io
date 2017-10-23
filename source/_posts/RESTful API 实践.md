@@ -2,11 +2,11 @@
 title: RESTful API 实践
 ---
 
-## 理解 REST 与 RESTful
-
 REST 是Fielding博士在他的论文[[1]](#Fielding博士论文)中提出的一种新的架构风格，被称作表述性状态移交（Representational State Transfer）架构风格，它成为了现代 Web 架构的基础。[[2]](#HTTP)
 
 符合 REST 原则的应用程序或设计称做 RESTful。
+
+由于不符合超媒体，现在是 HTTP API。
 
 <!--more-->
 
@@ -290,7 +290,7 @@ callback_function({
 	status_code: 200，
 	next_page: "https://.."，
 	response: {
-		... 正常的 JSON 实体 ... 
+		... 正常的 JSON 实体 ...
 	}
 })
 ```
@@ -307,7 +307,7 @@ callback_function({
 
  - `202 Accepted` - 请求已被接受，但尚未处理，请求有可能会拒绝执行 (例如 异步请求)
 
- - `204 No Content` - 请求成功，但没有内容返回 (例如 `DELET` 请求) 
+ - `204 No Content` - 请求成功，但没有内容返回 (例如 `DELET` 请求)
 
  - `304 Not Modified` - 请求的资源没有修改 适用于请求 缓存 没有变化的资源
 
@@ -317,7 +317,7 @@ callback_function({
 
  - `403 Forbidden` - 客户端提供了身份凭据，但权限不足
 
- - `404 Not Found` - 请求的资源不存在 
+ - `404 Not Found` - 请求的资源不存在
 
  - `405 Method Not Allowed` - 不存在当前请求的HTTP动词
 

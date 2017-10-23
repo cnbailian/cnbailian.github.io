@@ -2,7 +2,7 @@
 title: Session 与 JWT
 ---
 
-**关于 REST 与 HTTP 中 ·无状态· 的思考之 Session 与 JWT**
+**关于 REST 与 HTTP 中无状态架构约束的思考之 Session 与 JWT**
 
 <!--more-->  
 
