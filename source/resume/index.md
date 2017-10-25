@@ -10,9 +10,9 @@ layout: "resume"
 * 工作经验：2年
 * 技术博客：https://cnbailian.github.io/
 * GitHub：https://github.com/cnbailian
-* 期望职位：PHP程序员，Web API 方向
-* 期望薪资：10k~12k
-* 期望城市：北京
+* 期望职位：PHP程序员
+* 期望薪资：8k~12k
+* 期望城市：杭州
 
 **联系方式**
 
@@ -27,7 +27,7 @@ layout: "resume"
     * 问题与解决：时间紧，一定时限内完成整个系统，产品-测试都要包括在内。加班一个月左右解决。
   * 主要项目2：
     * 中普车房网：负责全部接口方面开发，包括接口架构，文档编写，与 APP 端的沟通协作等。框架选择：Lumen
-    * 问题：在与 APP 端开发人员沟通后，首次设计 RESTful API，碰到也解决了很多问题，API 的安全性，文档的编写，分页实现等等。
+    * 问题：首次设计 RESTful API，碰到也解决了很多问题，API 的安全性，文档的编写，分页实现等等。
     * 解决：我将解决方案整理了一篇 RESTful API 的实践博文（https://cnbailian.github.io/2017/10/RESTful%20API%20%E5%AE%9E%E8%B7%B5/）
   * 主要项目3：
     * 友毒 APP 接口开发，独立完成。框架选择：根据 Slim 修改，更适合 API 开发的框架。
