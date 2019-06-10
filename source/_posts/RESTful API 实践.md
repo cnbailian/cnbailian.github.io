@@ -1,5 +1,6 @@
 ---
 title: RESTful API 实践
+date: 2016/10/11 19:18:17
 ---
 
 REST 是Fielding博士在他的论文[[1]](#Fielding博士论文)中提出的一种新的架构风格，被称作表述性状态移交（Representational State Transfer）架构风格，它成为了现代 Web 架构的基础。[[2]](#HTTP)

@@ -1,5 +1,6 @@
 ---
 title: Session 与 JWT
+date: 2017/8/11 19:18:17
 ---
 
 **关于 REST 与 HTTP 中无状态架构约束的思考之 Session 与 JWT**

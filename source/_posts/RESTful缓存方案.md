@@ -1,5 +1,6 @@
 ---
 title: RESTful缓存方案
+date: 2016/9/10 19:18:17
 ---
 
 **RESTful的缓存是使用了http缓存规范**  
