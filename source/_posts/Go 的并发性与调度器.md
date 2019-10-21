@@ -78,7 +78,7 @@ func main() {
 
 通过下面的 gif 动画能清晰的看到程序运行过程：
 
-![primesieve](http://upload-images.jianshu.io/upload_images/3364371-903861f3becc05f1.gif?imageMogr2/auto-orient/strip)
+![primesieve](https://tva1.sinaimg.cn/large/006y8mN6ly1g85w9fqvjfg30l40c2qek.gif)
 
 ### 并发不是并行
 
@@ -123,7 +123,7 @@ func main() {
 
 并且亲自下场，重新设计、改进了 Go scheduler，在 Go1.1 版本中实现了 G-P-M 模型：
 
-![gpm-nino](http://upload-images.jianshu.io/upload_images/3364371-0dfecb228e22e74e.jpg?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+![gpm-nino](https://tva1.sinaimg.cn/large/006y8mN6ly1g85w9rofpbj30yg0lcgn5.jpg)
 
 #### G-P-M 模型
 

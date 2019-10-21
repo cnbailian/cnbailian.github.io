@@ -31,7 +31,7 @@ date: 2018/11/22 20:08:09
 
 
 ## 运行流程
-![flowchart.png](https://upload-images.jianshu.io/upload_images/3364371-d32505bf7e60f960.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+![flowchart.png](https://tva1.sinaimg.cn/large/006y8mN6ly1g85wd2xhuoj30o70lkq3n.jpg)
 
 
 ## 安装
@@ -280,7 +280,7 @@ $app->get('/authorize', function (ServerRequestInterface $request, ResponseInter
 ```
 
 此时展示给用户的是这样的页面：
-![qq-oauth.png](https://upload-images.jianshu.io/upload_images/3364371-7242d85781cdfe64.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+![qq-oauth.png](https://tva1.sinaimg.cn/large/006y8mN6ly1g85wd9vzqsj30yg0ke0wc.jpg)
 
 用户提交登录后，设置好用户实体(userEntity)：
 
@@ -406,7 +406,7 @@ $app->post('/login', function (ServerRequestInterface $request, ResponseInterfac
 ```
 
 此时展示给用户的是这样的页面：
-![qq-oauth.png](https://upload-images.jianshu.io/upload_images/3364371-7242d85781cdfe64.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+![qq-oauth.png](https://tva1.sinaimg.cn/large/006y8mN6ly1g85wde8ypgj30yg0ke0wc.jpg)
 
 用户提交登录后，设置好用户实体(userEntity)：
 
