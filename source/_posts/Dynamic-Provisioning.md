@@ -1,8 +1,12 @@
-# Kubernetes 的 Dynamic Provisioning 实现
+---
+title: Kubernetes 的 Dynamic Provisioning 实现
+---
 
 存储一直是容器运行的关键部分，Kubernetes 为此做了很多努力，从一开始的 `Pod Volumes`、`PV(Persistent Volumes)` 与 `PVC(Persistent Volume Claim)`，到 `StorageClass` 与 `Dynamic Provisioning`，再到现在“out-of-tree”的 `CSI(Container Storage Interface)`，Kubernetes 社区一直在演进存储的实现。
 
-前面基础的就不讲了，我们从 `StorageClass` 与 `Dynamic Provisioning` 开始了解。
+前面基础的就不讲了，我们从 `StorageClass` 与 `Dynamic Provisioning` 开始了解。  
+
+<!--more-->  
 
 
 
