@@ -2,9 +2,9 @@
 title: Kubernetes 的 Dynamic Provisioning 实现
 ---
 
-存储一直是容器运行的关键部分，Kubernetes 为此做了很多努力，从一开始的 `Pod Volumes`、`PV(Persistent Volumes)` 与 `PVC(Persistent Volume Claim)`，到 `StorageClass` 与 `Dynamic Provisioning`，再到现在“out-of-tree”的 `CSI(Container Storage Interface)`，Kubernetes 社区一直在演进存储的实现。
+存储一直是容器运行的关键部分，Kubernetes 为此做了很多努力，从一开始的 Pod Volumes、PV(Persistent Volumes) 与 PVC(Persistent Volume Claim)，到 StorageClass 与 Dynamic Provisioning，再到现在 “out-of-tree” 的 CSI(Container Storage Interface)，Kubernetes 社区一直在演进存储的实现。
 
-前面基础的就不讲了，我们从 `StorageClass` 与 `Dynamic Provisioning` 开始了解。  
+前面基础的就不讲了，我们从 StorageClass 与 Dynamic Provisioning 开始了解。  
 
 <!--more-->  
 
@@ -12,11 +12,11 @@ title: Kubernetes 的 Dynamic Provisioning 实现
 
 ## 关于 StorageClass 与 Dynamic Provisioning
 
-StorageClass 为存储提供了“类”的概念，使得 PVC 可以申请不同类别的 PV，以满足用户不同质量、不同策略要求的存储需求。但仅仅是这样还不够，我们还需要手动去创建存储，创建 PV 并与之绑定。所以 `StorageClass` 还有一个功能就是**动态卷供应（Dynamic Provisioning）**，通过它，Kubernetes 可以根据用户的需求，自动创建其需要的存储。
+StorageClass 为存储提供了“类”的概念，使得 PVC 可以申请不同类别的 PV，以满足用户不同质量、不同策略要求的存储需求。但仅仅是这样还不够，我们还需要手动去创建存储，创建 PV 并与之绑定。所以 StorageClass 还有一个功能就是**动态卷供应（Dynamic Provisioning）**，通过它，Kubernetes 可以根据用户的需求，自动创建其需要的存储。
 
 ### 如何使用
 
-我们需要创建 `StorageClass` 对象，通过 `Provisioner` 指定所用的动态供应的种类：
+我们需要创建 StorageClass 对象，通过 `provisioner` 属性指定所用的动态供应的种类：
 
 ```yaml
 apiVersion: storage.k8s.io/v1
@@ -28,7 +28,7 @@ parameters:
   type: gp2
 ```
 
-创建好以后，所有指定这个 `StorageClass` 的 `PVC` 都会动态分配 `PV`：
+创建好以后，所有指定这个 StorageClass 的 PVC 都会动态分配 PV：
 
 ```yaml
 apiVersion: v1
@@ -45,19 +45,19 @@ spec:
   storageClassName: standard
 ```
 
-当然，也需要些其他的配置，比如 `aws-ebs` 需要在启动参数中加入 `--cloud-provider=aws`。`Glusterfs` 需要在集群节点中预先安装好 分布式存储等。具体请参考官方手册或 Google，这里不赘述了。
+当然，也需要些其他的配置，比如 aws-ebs 需要在启动参数中加入 `--cloud-provider=aws`。Glusterfs 需要在集群节点中预先安装好分布式存储等。具体请参考官方手册或 Google，这里不赘述了。
 
 ### External provisioner
 
-官方提供了许多 `Provisioner` 的实现：`AWSElasticBlockStore`、`AzureFile`、`Glusterfs` [等等](https://kubernetes.io/docs/concepts/storage/storage-classes/#provisioner)，这些都是“in-tree”的，所以官方也在实验一些 external provisioner 的实现方式。在 **[kubernetes-incubator/external-storage](https://github.com/kubernetes-incubator/external-storage)** 这个仓库中，就有一些孵化中的项目，不过随着 CSI 的出现，应该已经孵死了。官方也正在将“in-tree”的存储实现迁移到 CSI 上。
+官方提供了许多 Provisioner 的实现：AWSElasticBlockStore、AzureFile、Glusterfs [等等](https://kubernetes.io/docs/concepts/storage/storage-classes/#provisioner)，这些都是 “in-tree” 的，所以官方也在实验一些 external provisioner 的实现方式。在 **[kubernetes-incubator/external-storage](https://github.com/kubernetes-incubator/external-storage)** 这个仓库中，就有一些孵化中的项目，不过随着 CSI 的出现，应该已经孵死了。官方也正在将 “in-tree” 的存储实现迁移到 CSI 上。
 
 
 
 ## 如何实现
 
-我们根据 external-storage 仓库中的项目，简单的分析一下如何自定义一个 `Dynamic Provisioner`。
+我们根据 external-storage 仓库中的项目，简单的分析一下如何自定义一个 Dynamic Provisioner。
 
-其实这个仓库中的项目都很简单，文件没有几个，代码也没有几行。这是因为它们都是基于官方社区的 [library](https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner#sig-storage-lib-external-provisioner) 实现的，它实现了 `Provisioner Controller` 的整个流程，包括监听、创建 `PV` 资源等，我们只需要实现 `Provisioner` 接口的两个方法就可以：
+其实这个仓库中的项目都很简单，文件没有几个，代码也没有几行。这是因为它们都是基于官方社区的 [library](https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner#sig-storage-lib-external-provisioner) 实现的，它实现了 `Provisioner Controller` 的整个流程，包括监听、创建 PV 资源等，我们只需要实现 `Provisioner` 接口的两个方法就可以：
 
 ```Go
 // Provisioner is an interface that creates templates for PersistentVolumes
@@ -77,9 +77,9 @@ type Provisioner interface {
 }
 ```
 
-`Provision` 方法需要根据给定的数据，分配存储，响应 `PV` 对象。`Delete` 方法需要在 `PV` 删除时，也删除对应存储中的数据。
+`Provision` 方法需要根据给定的数据，分配存储，响应 PV 对象。`Delete` 方法需要在 PV 删除时，也删除对应存储中的数据。
 
-我们选择仓库中的 `nfs` 项目来进行详细的分析，它不同于其他 client 类项目，它还维护了一份 nfs server，使得它可以不基于其他外部存储服务。可以在 `main` 函数中看到，通过 `runServer flag` 判断是否需要启动服务，默认为 `true`：
+我们选择仓库中的 nfs 项目来进行详细的分析，它不同于其他 client 类项目，它还维护了一份 nfs server，使得它可以不基于其他外部存储服务。可以在 `main` 函数中看到，通过 `runServer flag` 判断是否需要启动服务，默认为 `true`：
 
 ```go
 	if *runServer {
@@ -101,7 +101,7 @@ type Provisioner interface {
 	}
 ```
 
-随后通过 `Provisioner Controller` 的 `Run` 方法启动 `Provisioner` 服务：
+随后通过 `Provisioner Controller` 的 `Run` 方法启动 Provisioner 服务：
 
 ```go
 	// Create the provisioner: it implements the Provisioner interface expected by
@@ -225,5 +225,5 @@ func (p *nfsProvisioner) Delete(volume *v1.PersistentVolume) error {
 
 ## 后记
 
-碰巧在项目中接触到了 nfs 这个 `Provisioner`，并且经过测试及源码分析验证了这个项目不可用。经过查阅学习之后写下了这篇文章，算是为以后学习 CSI 作准备吧。
+碰巧在项目中接触到了 nfs 这个 Provisioner，并且经过测试及源码分析验证了这个项目不可用。经过查阅学习之后写下了这篇文章，算是为以后学习 CSI 作准备吧。
 
