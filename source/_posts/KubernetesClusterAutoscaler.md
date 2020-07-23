@@ -1,5 +1,6 @@
 ---
 title: Kubernetes Cluster Autoscaler
+date: 2020/3/31 00:00:00
 ---
 
 当我们使用 Kubernetes 部署应用后，会发现如果用户增长速度超过预期，以至于计算资源不够时，你会怎么做呢？Kubernetes 给出的解决方案就是：自动伸缩（auto-scaling），通过自动伸缩组件之间的配合，可以 7*24 小时的监控着你的集群，动态变化负载，以适应你的用户需求。
