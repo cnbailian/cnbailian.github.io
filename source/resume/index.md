@@ -45,7 +45,7 @@ layout: "resume"
 
 * 《Kubernetes Cluster Autoscaler》 https://cnbailian.github.io/2020/03/KubernetesClusterAutoscaler/
 * 《Go 的并发性与调度器》https://cnbailian.github.io/2019/03/Concurrency-and-scheduler-of-Go/
-* 《RESTful API 实践》 https://cnbailian.github.io/2017/10/RESTful%20API%20%E5%AE%9E%E8%B7%B5/
+* 《RESTful API 实践》 https://cnbailian.github.io/2016/10/RESTful-API-Practice/
 
 ### 技术演讲
 
