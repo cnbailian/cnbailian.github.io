@@ -18,7 +18,7 @@ layout: "resume"
 
 ### 工作经历
 
-* 沈阳卓芯数据科技有限公司 （2018-10 ~）
+* 沈阳xx数据科技有限公司 （2018-10 ~）
   * 容器化 PAAS 平台项目
     * 一个 Kubernetes 应用部署引擎，适用于任何标准版本的 Kubernetes 集群。通过 Kubernetes CRD 或 CLI 进行操作，用户可以将应用部署到 Kubernetes 中，并且有 CI/CD、HTTPS、Routing、Monitoring、Alerting、Autoscaling、Webhook 等功能。
     * 我负责其中大部分的产品功能设计、软件架构设计及编码工作。
