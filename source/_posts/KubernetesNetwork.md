@@ -1,0 +1,530 @@
+---
+title: 跨主机容器网络笔记
+date: 2021/2/7 17:30:00
+---
+
+集群网络系统是 Kubernetes 的核心部分，其中 Pod 之间的通信的部分 Kubernetes 没有自己实现，而是交给了外部组件进行处理。Kubernetes 对这部分网络模型的要求是：节点上的 Pod 可以不通过 NAT 和其他任何节点上的 Pod 通信。这就需要一个跨主机的容器网络。
+
+本篇笔记前半部分记录了 VXLAN 技术。VXLAN 全称是 `Virtual eXtensible Local Area Network`，虚拟可扩展的局域网。它是一种 Overlay 技术，通过三层网络来搭建的二层网络。在笔记的后半部分，通过学习 [Flannel](https://github.com/coreos/flannel) 的源码手动搭建跨主机容器网络示例。
+
+笔记中 vxlan 内容学习自 [cizixs](https://cizixs.com/about/) 的两篇博客，一篇[介绍协议原理](https://cizixs.com/2017/09/25/vxlan-protocol-introduction/)，一篇[结合实践](https://cizixs.com/2017/09/28/linux-vxlan/)。文章写的很详细，而且深入浅出适合学习，建议读者在 vxlan 部分直接看原文。
+
+
+<!--more-->
+
+
+## VXLAN 协议原理
+
+上面提到 vxlan 是 overlay 技术，overlay 网络是建立在已有物理网络（underlay）上的虚拟网络，具有独立的控制和转发平面，对于连接到 overlay 的设备来说，物理网络是透明的。
+
+那么 vxlan 这类的 Overlay 网络解决了那么些问题？
+
+* 传统的 VLAN 技术满足不了虚拟化场景下的数据中心规模，VLAN 最多只支持 4096 个网络上限。
+* 数据中心需要提供多租户功能，不同用户之间需要独立的分配 IP 和 MAC 地址
+* 云计算业务需要高灵活性，虚拟机可能会大规模迁移，并保证网络一直可用。
+
+vxlan 实现原理就是使用 VTEP 设备对服务器发出和收到的数据包进行二次封装和解封。所以 vxlan 这类隧道网络对原有的网络架构影响小，原来的网络不需要做任何改动，在原有网络上架设一层新的网络。
+
+
+
+### VXLAN 模型
+
+![vxlan](https://tva1.sinaimg.cn/large/007S8ZIlly1gi3vmfk4nmj30g808ft9m.jpg)
+
+物理网络上可以创建多个 vxlan 网络，这些 vxlan 网络可以认为是一个隧道，不同节点的虚拟机能够通过隧道直连。在每个端点上都有一个 vtep 负责 vxlan 协议的封包和解包，也就是在虚拟报文上封装 vtep 通信的报文头部。每个 vxlan 网络由唯一的 VNI 标识，不同的 vxlan 可以不互相影响。
+
+- VTEP（VXLAN Tunnel Endpoints）：vxlan 网络的边缘设备，用来进行 vxlan 报文的处理（封包和解包）。vtep 可以是网络设备（比如交换机），也可以是一台机器（比如虚拟化集群中的宿主机）。
+- VNI（VXLAN Network Identifier）：VNI 是每个 vxlan 的标识，是个 24 位整数，一共有 2^24 = 16,777,216（一千多万），一般每个 VNI 对应一个租户，也就是说使用 vxlan 搭建的公有云可以理论上可以支撑千万级别的租户。
+- Tunnel：隧道是一个逻辑上的概念，在 vxlan 模型中并没有具体的物理实体想对应。隧道可以看做是一种虚拟通道，vxlan 通信双方（图中的虚拟机）认为自己是在直接通信，并不知道底层网络的存在。从整体来说，每个 vxlan 网络像是为通信的虚拟机搭建了一个单独的通信通道，也就是隧道。
+
+
+
+### VXLAN 报文解析
+
+![post-img](https://tva1.sinaimg.cn/large/007S8ZIlly1gi3w2klximj30vn0f040c.jpg)
+
+白色部分是虚拟机发送的原始报文（二层帧，包含了 MAC 头部、IP 头部和传输层头部的报文），前面加上了 vxlan 头部用于保存 vxlan 相关内容，再前面是标准的 UDP 协议头部（UDP 头部、IP 头部和 MAC 头部）用来在底层网络上传输报文。
+
+最外层的 UDP 协议用来在底层网络上传输，也就是 vtep 之间互相通信的基础。中间是 VXLAN 头部，vetp 接到报文后，根据这部分内容处理 vxlan 逻辑，主要是根据 VNI 发送到最终的虚拟机。最里面是原始报文，也就是虚拟机看到的报文内容。
+
+报文各部分意义如下：
+
+* VXLAN header：8 字节
+  * VXLAN flags：标志位
+  * Reserved：保留位
+  * VNID：24 位的 VNID 标识
+  * Reserved：保留位
+* UDP 头部：8 字节
+  * UDP：UDP 通信双方是 vtep 应用，IANA 分配的 vxlan 端口是 4789
+* IP 头部：20 字节
+  * 目的地址：是由虚拟机所在地址宿主机的 vtep 的 IP 地址
+* MAC 头部：14 字节
+  * MAC 地址：主机之间通信的 MAC 地址
+
+可以看出 vxlan 协议比原始报文多出 50 字节的内容，这会降低网络链路传输有效数据的比例。
+
+
+
+## 实现 VXLAN
+
+Linux 在 3.7.0 版本才开始支持 vxlan，请尽量使用比较新版本的 kernel，以免因为内核版本太低导致功能或性能出现问题。
+
+我的实验环境是 2 台 AWS Debian 系统实例：
+
+```shell
+$ uname -r
+4.19.0-14-cloud-amd64
+$ echo ${HOST1_IP}
+172.16.3.142
+$ echo ${HOST2_IP}
+172.16.2.21
+```
+
+同时为了实验容器网络，会保证每台主机上都有 network namespace（net0）与 bridge（br0） 的连接关系。创建过程在上一篇笔记。
+
+```shell
+$ ip netns
+net0 (id: 0)
+$ ip link
+veth1
+br0
+$ ip netns exec net0 ip addr # host1
+veth0
+  link/ether 4e:3d:fd:29:55:38
+  inet 192.168.2.11/24 scope global veth0
+$ ip netns exec net0 ip addr # host2
+veth0
+  link/ether 46:63:12:3e:fa:da
+  inet 192.168.2.12/24 scope global veth0
+```
+
+
+
+### 点对点 VXLAN
+
+首先创建 host1 的点对点的 VXLAN 设备，点对点设备是指创建 vxlan 时指定了 `remote` 参数的设备：
+
+```shell
+$ ip link add type vxlan id 1 dstport 4789 dev eth0 remote 172.16.2.21
+```
+
+`id 1` 表示 VNI，在点对点的设备中需要双方保持一致。
+
+`dstport 4789` 是IANA 分配的 vxlan 端口是 4789，Linux 默认使用 8472，所以这里显式分配。
+
+`dev eth0` 表示当前节点用于通信的网络设备，用于获取 IP，与 `local 172.16.3.142` 参数等效。
+
+`remote 172.16.2.21` 显示指定了 vxlan 的对口 IP，所以只会发往这个地址，类似点对点协议。
+
+host2 主机同样需要创建，注意 `id & dspport` 参数要保持一致，`remote` 参数要指定 host1 IP：
+
+```shell
+$ ip link add type vxlan id 1 dstport 4789 dev eth0 remote 172.16.3.142
+```
+
+在两台主机上将 vxlan 设备挂载至 bridge，并启动：
+
+```shell
+$ ip link set vxlan0 master br0
+$ ip link set up vxlan0
+```
+
+尝试 ping:
+
+```shell
+$ ip netns exec net0 ping -c1 192.168.2.12
+PING 192.168.2.12 (192.168.2.12) 56(84) bytes of data.
+64 bytes from 192.168.2.12: icmp_seq=1 ttl=64 time=1.31 ms
+
+--- 192.168.2.12 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+```
+
+
+
+### VXLAN 网络
+
+点对点设备只能两两通信，实际用处不大。我们需要组成 vxlan 网络，在 vxlan 网络中有着一个问题：vtep 如何感知彼此的存在并选择正确路径传输报文？从上面的封装的报文中来看，有两个地址在发送时是不确定的：
+
+1. 对方 vtep 的 IP 地址
+   * 在 IP 头部，需要的是双方 vtep 的 IP 地址，源地址可以很简单确定，目的地址是要发往的**虚拟机所在地址的宿主机的 vtep 的 IP 地址**，而我们在发送时只知道对方虚拟机 IP 的地址。
+2. 对方虚拟机 MAC 地址
+   * 在内部报文中，通信双方是知道对方 IP 地址的，但如果是同一网段的通信，还需要知道对方**虚拟机的 MAC 地址**。
+
+那么在点对点的 vxlan 设备上为什么没有这个问题呢？
+
+在点对点的设备中，对方 vtep IP 地址在创建 vxlan 设备由 `remote` 参数指定。由于是同网段，vxlan 设备将 ARP 请求也发送到了对点的 vtep 上，所以能够直接获得对方的 ARP 响应。
+
+[《vxlan 协议原理简介》](https://cizixs.com/2017/09/25/vxlan-protocol-introduction/)中提出了两个解决方案：多播和分布式控制中心；多播需要底层网络设备的配合，有一定局限性，而且多播方式会带来报文的浪费，在实际生产中很少用到。而分布式控制的 vxlan 是一种典型的 [SDN](https://baike.baidu.com/item/%E8%BD%AF%E4%BB%B6%E5%AE%9A%E4%B9%89%E7%BD%91%E7%BB%9C/9117977) 架构，也是目前使用最广泛的方式。
+
+
+
+### 分布式控制中心
+
+多播的解决方案是在发送报文前以广播的方式自动学习地址，可是这太浪费了。所以分布式控制中心的解决方案就是提前知道地址信息，直接告诉 vtep，这就不需要多播了。
+
+一般情况下，在每个 vtep 所在的节点都会有一个 agent，它会和控制中心通信，获取 vtep 需要的信息以某种方式告知 vtep。不止告知的方式不同，告知的时间也有区别。一般有两种方式：常见的是一旦知道信息就立刻告知 vtep，即使它可能用不上，一般这时候第一次通信还没有发生；另一种方式是在第一次通信时 vtep 以某种方式通知 agent，然后 agent 才告诉 vtep 这些信息。
+
+#### ARP 和 FDB
+
+先解释一下 ARP 表和 FDB（二层转发表）表。
+
+ARP 表是由三层设备（路由器，三层交换机，服务器，电脑）用来存储 ip 地址和 mac 地址对应关系的一张表。
+
+FDB 是二层转发表，它是由2层设备（二层交换机）用来存储mac地址和交换机接口地址对应关系的一张表，用于帮助交换机指明 MAC 帧应从哪个端口发出去。Linux vxlan 设备的 FDB 表与上面说的交换机的 FDB 表略有不同，vxlan 设备的 FBD 表保存的是 mac 地址与其他 vxlan 设备的 vtep 地址。
+
+#### 手动维护 FDB 表
+
+在多播中以广播的形式获取宿主机的 IP 地址。如果提前知道目的虚拟机的 MAC 地址和它所在的主机的 IP 地址，可以通过更新 FDB 表项来减少广播报文的数量。这就能解决第一个问题。
+
+```shell
+$ ip link add type vxlan id 1 dstport 4789 dev eth0 nolearning
+```
+
+添加 `nolearning` 参数告诉 vtep 不要通过收到的报文来学习 FDB 表项的内容，因为我们会手动维护这个列表。
+
+```shell
+$ bridge fdb append 4e:3d:fd:29:55:38 dev vxlan0 dst 172.16.3.142 # host1 netns 与宿主机 IP 映射
+$ bridge fdb append 46:63:12:3e:fa:da dev vxlan0 dst 172.16.2.21 # host2 netns 与宿主机 IP 映射
+```
+
+通过这个映射表，在发送报文时，vtep 搜索 FDB 表项就知道应该发送到哪个对应的 vtep 上了。需要注意的是，还需要一个默认的表项，以便 vtep 在不知道对应关系时可以通过默认方式发送 ARP 报文去查询对方的 MAC 地址。
+
+```shell
+$ bridge fdb append 00:00:00:00:00:00 dev vxlan0 dst 172.16.3.142
+$ bridge fdb append 00:00:00:00:00:00 dev vxlan0 dst 172.16.2.21
+```
+
+#### 手动维护 ARP 表
+
+单独维护 FDB 表并没有作用，因为在不知道对方虚拟机 MAC 地址的情况下还是会广播大量的 ARP 报文。所以 ARP 表也需要手动维护。这能解决第二个问题。
+
+但 ARP 表的维护不同于 FDB 表，因为最终通信的双方是容器。到每个容器里面去更新对应的 ARP 表，是件工作量很大的事情，而且容器的创建和删除还是动态的。Linux 提供了一个解决方案，vtep 可以作为 ARP 代理，回复 ARP 请求，也就是说只要 vtep interface 知道对应的 `IP - MAC` 关系，在接收到容器发来的 ARP 请求时可以直接做出应答。我们只需要更新 vtep interface 上的 ARP 表项就行了。
+
+```shell
+$ ip link add type vxlan id 1 dstport 4789 dev eth0 nolearning proxy
+```
+
+添加 `proxy` 参数告知 vtep 承担 ARP 代理的功能。如果收到 ARP 请求，并且自己知道结果就直接作出应答。
+
+```shell
+$ ip neigh add 192.168.2.11 lladdr 4e:3d:fd:29:55:38 dev vxlan0
+$ ip neigh add 192.168.2.12 lladdr 46:63:12:3e:fa:da dev vxlan0
+```
+
+在要通信的所有节点配置完之后，容器就能相互 ping 通。当容器要访问彼此，并且第一次发送 ARP 请求时，这个请求并不会发送给所有的 vtep，而是由当前的 vtep 作出应答，大大减少了网络上的报文。
+
+```shell
+$ ip netns exec net0 ping -c1 192.168.2.12
+PING 192.168.2.12 (192.168.2.12) 56(84) bytes of data.
+64 bytes from 192.168.2.12: icmp_seq=1 ttl=64 time=1.15 ms
+
+--- 192.168.2.12 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+```
+
+这里要注意的是前面的示例中 netns 都是在同一网段 `192.168.2.0/24`，实际的项目会需要更大的网段，而跨网段就需要走网关。
+
+#### 动态维护 ARP 和 FDB 表
+
+尽管通过手动维护 FDB 表和 ARP 表可以避免多余的网络报文，但是还有一个问题：为了能让所有的容器正常工作，所有可能会通信的容器都必须提前添加到 ARP 和 FDB 表项中。但并不是网络上所有的容器都会相互通信，所以添加的有些表项是用不到的。
+
+Linux 提供了一种方法，内核能够动态地通知节点要和哪个容器通信，应用程序可以订阅这些事件，如果内核发现需要的 ARP 或者 FDB 表项不存在，会发送事件给订阅的应用程序，这样应用程序可以从控制中心拿到这些信息来更新表项，做到更精确的控制。
+
+```shell
+$ ip link add vxlan0 type vxlan id 1 dstport 4789 dev eth0 nolearning proxy l2miss l3miss
+```
+
+这次多了两个参数 `l2miss` 和 `l3miss`：
+
+* `l2miss`：如果设备找不到 MAC 地址需要的 vtep 地址，就会发送通知事件
+* `l3miss`：如果设备找不到 IP 地址需要的 MAC 地址，就会发送通知事件
+
+`ip monitor` 命令可以监听某个 interface 的事件：
+
+```shell
+$ ip monitor all dev vxlan0
+```
+
+如果从本节点容器 ping 另外一个节点的容器，就先发生 l3 miss：
+
+```shell
+$ ipmonitor all dev vxlan0
+[nsid current]miss 10.20.1.3  STALE
+```
+
+`l3miss` 是说这个 IP 地址，vtep 不知道它对应的 MAC 地址，因此要手动添加 ARP 记录：
+
+```shell
+$ ip neigh add 192.168.2.12 lladdr 46:63:12:3e:fa:da dev vxlan0 nud reachable
+```
+
+`nud reachable` 参数代表系统发现其无效一段时间后会自动删除。
+
+添加 ARP 表项后还是不能正常通信，接着会出现 l2miss 的通知事件：
+
+```shell
+$ ip monitor all dev vxlan0
+[nsid current]miss lladdr 46:63:12:3e:fa:da STALE
+```
+
+这个事件是说不知道这个容器的 MAC 地址在哪个节点上，所以要手动添加 FDB 记录：
+
+```shell
+$ bridge fdb append 46:63:12:3e:fa:da dev vxlan0 dst 172.16.2.21
+```
+
+
+
+## Flannel
+
+Flannel 是 CoreOS 为 Kubernetes 设计的网络插件，实现简单且容易配置，但社区不怎么活跃，不过用来学习还是很好的。
+
+
+
+### Some design notes and history
+
+Flannel 对于网络的实现有不同的 `backend`，vxlan 的实现在 `backend/vxlan` 中， 源码文件 `vxlan.go` 的注释中记载了一些修改历史：
+
+1. Flannel 的第一个版本，l3miss 学习，通过查找 ARP 表 MAC 完成的。 l2miss 学习，通过获取 VTEP 上的 public ip 完成的。
+
+2. Flannel 的第二个版本，移除了 l3miss 学习的需求，当远端主机上线，只是直接添加对应的 ARP 表项即可，不用查找学习了。
+
+3. Flannel的最新版本，移除了 l2miss 学习的需求，不再监听 netlink 消息。
+
+   它的工作模式：
+
+   1. 创建 vxlan 设备，不再监听任何 l2miss 和 l3miss 事件消息
+   2. 为远端的子网创建路由
+   3. 为远端主机创建静态 ARP 表项
+   4. 创建 FDB 转发表项，包含 VTEP MAC 和远端 Flannel 的 public IP
+   5. 同一个 VNI 下每一台 Host 主机仅包含 1 route，1 arp entry and 1 FDB entry。
+   6. 还有一个选项是跳过对位于同一子网的主机使用vxlan，这被称为“directRouting”
+
+l2miss 和 l3miss 方案缺陷
+
+1. 每一台 Host 需要配置所有需要互通 Guest 路由，路由记录会膨胀，不适合大型组网
+2. 通过 netlink 通知学习路由的效率不高
+3. Flannel Daemon 异常后无法持续维护 ARP 和 FDB 表，从而导致网络不通
+
+在最新的方案中，有选项可以跳过对同一子网上的主机使用vxlan，称为“directRouting（直达路由）”。
+
+
+
+### 源码分析
+
+```go
+func main() {
+	// 创建 SubnetManager 用于管理子网。sm 有两种模式，通过 kube-subnet-mgr 划分。kubeSubnetMgr 使用 Kubernetes 管理子网；etcdSubnetMgr 使用 etcd 管理子网。
+	sm, err := newSubnetManager()
+	if err != nil {
+		log.Error("Failed to create SubnetManager: ", err)
+		os.Exit(1)
+	}
+	log.Infof("Created subnet manager: %s", sm.Name())
+
+	// 创建 BackendManager，随后根据类型获取 BackendNetwork，用于在 Node 上创建网络。backends 通过 init 函数在 backend.Register 中注册，BackendManager 通过 GetBackend 获得对应类型的 backend，类型通过 Flannel config 文件 BackendType 字段获取。
+	// Create a backend manager then use it to create the backend and register the network with it.
+	bm := backend.NewManager(ctx, sm, extIface)
+	be, err := bm.GetBackend(config.BackendType)
+	if err != nil {
+		log.Errorf("Error fetching backend: %s", err)
+		cancel()
+		wg.Wait()
+		os.Exit(1)
+	}
+
+	// 获得 backend 后，使用 RegisterNetwork 方法创建主机网络。
+	bn, err := be.RegisterNetwork(ctx, &wg, config)
+	if err != nil {
+		log.Errorf("Error registering network: %s", err)
+		cancel()
+		wg.Wait()
+		os.Exit(1)
+	}
+
+	// Start "Running" the backend network. This will block until the context is done so run in another goroutine.
+	log.Info("Running backend.")
+	wg.Add(1)
+	go func() {
+		// 监听子网事件，通过 handleSubnetEvents 为主机创建静态路由、ARP表项、FDB表项。
+		// kubeSubnetManager 在 newKubeSubnetManager 时通过 informer 监听 Node 事件，发送给 events 不同的 object，然后进行处理
+		bn.Run(ctx)
+		wg.Done()
+	}()
+
+	daemon.SdNotify(false, "READY=1")
+
+	// Kube subnet mgr doesn't lease the subnet for this node - it just uses the podCidr that's already assigned.
+	if !opts.kubeSubnetMgr {
+		err = MonitorLease(ctx, sm, bn, &wg)
+		if err == errInterrupted {
+			// The lease was "revoked" - shut everything down
+			cancel()
+		}
+	}
+}
+```
+
+`vxlan.go RegisterNetwork()`
+
+```go
+func (be *VXLANBackend) RegisterNetwork(ctx context.Context, wg *sync.WaitGroup, config *subnet.Config) (backend.Network, error) {
+  // 通过 config 文件中 Backend 字段获取配置。设置 vxlanDeviceAttrs，使用 VNI 作为 name。
+  devAttrs := vxlanDeviceAttrs{
+		vni:       uint32(cfg.VNI),
+		name:      fmt.Sprintf("flannel.%v", cfg.VNI),
+		vtepIndex: be.extIface.Iface.Index,
+		vtepAddr:  be.extIface.IfaceAddr,
+		vtepPort:  cfg.Port,
+		gbp:       cfg.GBP,
+		learning:  cfg.Learning,
+	}
+  // 使用 vxlanDeviceAttrs 设置 vxlanDevice
+  // newVXLANDevice 函数通过 github.com/vishvananda/netlink 包创建 vxlan 设备，然后设置 net/ipv6/conf/${device_name}/accept_ra 的配置。
+	dev, err := newVXLANDevice(&devAttrs)
+	if err != nil {
+		return nil, err
+	}
+	dev.directRouting = cfg.DirectRouting
+
+  // 通过 newSubnetAttrs 函数获取配置，使用 subnetMgr 设置子网并得到 Lease。
+	subnetAttrs, err := newSubnetAttrs(be.extIface.ExtAddr, dev.MACAddr())
+	if err != nil {
+		return nil, err
+	}
+
+	lease, err := be.subnetMgr.AcquireLease(ctx, subnetAttrs)
+	switch err {
+	case nil:
+	case context.Canceled, context.DeadlineExceeded:
+		return nil, err
+	default:
+		return nil, fmt.Errorf("failed to acquire lease: %v", err)
+	}
+
+	// Ensure that the device has a /32 address so that no broadcast routes are created.
+	// This IP is just used as a source address for host to workload traffic (so
+	// the return path for the traffic has an address on the flannel network to use as the destination)
+  // 配置 vxlan 设备 addr，然后启动设备。设置 vxlan 设备为子网中的 /32 地址
+	if err := dev.Configure(ip.IP4Net{IP: lease.Subnet.IP, PrefixLen: 32}); err != nil {
+		return nil, fmt.Errorf("failed to configure interface %s: %s", dev.link.Attrs().Name, err)
+	}
+
+	return newNetwork(be.subnetMgr, be.extIface, dev, ip.IP4Net{}, lease)
+}
+```
+
+
+
+### Linux 实现 flannel 网络
+
+Flannel 网络配置不需要维护过多的表项，在同一个 VNI 下的每台主机仅需要配置一个路由、一个 ARP 表项、一个 FDB 表项。配置的表项变少，解决了手动维护 FDB 表和 ARP 表所带来的过多的无用表项问题，但相应的也会增加报文的发送，这也是 flannel 在实现上的取舍问题。
+
+#### 环境
+
+Flannel 配置：
+
+```json
+{
+  "Network": "10.244.0.0/16",
+  "Backend": {
+    "Type": "vxlan"
+  }
+}
+```
+
+Flannel 使用 `/16` CIDR，为每个节点分配一个 `/24` 的子网，所以此时的 network namespace 变为：
+
+```shell
+$ ip netns exec net0 ip addr # host1
+veth0:
+  inet 10.244.0.2/24 scope global veth0
+$ ip netns exec net0 ip addr # host2
+veth0:
+  inet 10.244.1.2/24 scope global veth0
+```
+
+因为跨网段，所以为 br0 设置 IP 地址，并修改路由表做为网关：
+
+```shell
+$ ip netns exec net0 ip route add 10.244.0.0/16 via 10.244.0.1 dev veth0 onlink # host1
+$ ip addr
+br0:
+  inet 10.244.0.1/24 scope global br0
+$ ip netns exec net0 ip route add 10.244.0.0/16 via 10.244.1.1 dev veth0 onlink # host2
+$ ip addr
+br0:
+  inet 10.244.1.1/24 scope global br0
+```
+
+#### 示例
+
+配置 vxlan 设备：
+
+```shell
+$ ip link add vxlan0 type vxlan id 1 dstport 4789 dev eth0 nolearning
+$ ip link set up vxlan0
+$ ip link # host1
+vxlan0:
+  link/ether c2:cb:69:f5:a6:e4
+$ ip link # host2
+vxlan0:
+  link/ether 66:8e:33:ac:7a:22
+```
+
+设置路由表：
+
+```shell
+$ ip addr add 10.244.0.0 dev vxlan0 # 本机 vxlan IP
+$ ip route add 10.244.1.0/24 via 10.244.1.0 dev vxlan0 onlink # 在 host1 设置 host2 路由表
+# $ ip addr add 10.244.1.0 dev vxlan0
+# $ ip route add 10.244.0.0/24 via 10.244.0.0 dev vxlan0 onlink
+```
+
+设置 FDB 表：
+
+```shell
+$ bridge fdb append 66:8e:33:ac:7a:22 dev vxlan0 dst 172.16.2.21 # host2 主机的 vxlan MAC 地址与主机 IP
+# bridge fdb append c2:cb:69:f5:a6:e4 dev vxlan0 dst 172.16.3.142
+```
+
+设置 ARP 表：
+
+```shell
+$ ip neigh add 10.244.1.0 dev vxlan0 lladdr 66:8e:33:ac:7a:22 # host2 vxlan MAC 与 vxlan IP
+# $ ip neigh add 10.244.0.0 dev vxlan0 lladdr c2:cb:69:f5:a6:e4
+```
+
+测试 ping：
+
+```shell
+$ ip netns exec net0 ping -c1 10.244.1.2
+PING 10.244.1.2 (10.244.1.2) 56(84) bytes of data.
+64 bytes from 10.244.1.2: icmp_seq=1 ttl=62 time=1.11 ms
+
+--- 10.244.1.2 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+```
+
+如果需要，别忘记设置内核 ip forward 参数：
+
+```shell
+$ sysctl -w net.ipv4.ip_forward=1
+```
+
+#### 总结
+
+Flannel 基于每台节点一个 `/24` 的网段，大大减少了维护 ARP 和 FDB 表项的工作，所增加的只是数据包达到目的地主机后的少量 ARP 请求，每次容器的增减也不需要触发维护。对比完全手动维护的方案来说，要好得多。
+
+
+
+## 参考文章
+
+[vxlan 协议原理简介](https://cizixs.com/2017/09/25/vxlan-protocol-introduction/)
+
+[linux 上实现 vxlan 网络](https://cizixs.com/2017/09/28/linux-vxlan/)
+
+[为什么 flannel.1 丢失后不会自动重建](https://zdyxry.github.io/2020/01/03/%e4%b8%ba%e4%bb%80%e4%b9%88-flannel-1-%e4%b8%a2%e5%a4%b1%e5%90%8e%e4%b8%8d%e4%bc%9a%e8%87%aa%e5%8a%a8%e9%87%8d%e5%bb%ba/)
+
+
