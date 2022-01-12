@@ -2,14 +2,14 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://cnbailian.github.io</id>
     <title>白联</title>
-    <updated>2021-05-08T03:30:23.653Z</updated>
+    <updated>2022-01-12T07:26:33.840Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://cnbailian.github.io"/>
     <link rel="self" href="https://cnbailian.github.io/atom.xml"/>
     <subtitle>努力前行</subtitle>
     <logo>https://cnbailian.github.io/images/avatar.png</logo>
     <icon>https://cnbailian.github.io/favicon.ico</icon>
-    <rights>All rights reserved 2021, 白联</rights>
+    <rights>All rights reserved 2022, 白联</rights>
     <entry>
         <title type="html"><![CDATA[从 SampleController 项目看 kubernetes controller 的设计——笔记]]></title>
         <id>https://cnbailian.github.io/post/kubernetes-samplecontroller/</id>
