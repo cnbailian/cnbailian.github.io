@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://cnbailian.github.io</id>
     <title>白联</title>
-    <updated>2022-01-12T07:26:33.840Z</updated>
+    <updated>2022-01-12T07:30:29.941Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://cnbailian.github.io"/>
     <link rel="self" href="https://cnbailian.github.io/atom.xml"/>
@@ -1424,6 +1424,651 @@ $ kubectl apply -f nginx.yaml
 ]]></content>
     </entry>
     <entry>
+        <title type="html"><![CDATA[Go 栈笔记]]></title>
+        <id>https://cnbailian.github.io/post/go-stack-notes/</id>
+        <link href="https://cnbailian.github.io/post/go-stack-notes/">
+        </link>
+        <updated>2021-02-08T06:58:40.000Z</updated>
+        <summary type="html"><![CDATA[<p>本文用于持续记录 Go 栈相关源码学习笔记。</p>
+]]></summary>
+        <content type="html"><![CDATA[<p>本文用于持续记录 Go 栈相关源码学习笔记。</p>
+<!--more-->
+<h2 id="goroutine-执行栈结构">Goroutine 执行栈结构</h2>
+<p>Goroutine 是一个 <code>g</code> 对象，<code>g</code> 对象的前三个字段描述了它的执行栈：</p>
+<pre><code class="language-go">// stack 描述了 Goroutine 的执行栈，栈的区间为 [lo, hi)，在栈两边没有任何隐式数据结构
+// 因此 Go 的执行栈由运行时管理，本质上分配在堆中，比 ulimit -s 大
+type stack struct {
+	lo uintptr
+	hi uintptr
+}
+// gobuf 描述了 Goroutine 的执行现场
+type gobuf struct {
+	sp   uintptr
+	pc   uintptr
+	g    guintptr
+	ctxt unsafe.Pointer
+	ret  sys.Uintreg
+	lr   uintptr
+	bp   uintptr
+}
+
+type g struct {
+  // stack 字段描述了实际的栈内存：[stack.lo, stack.hi)
+	stack       stack   // offset known to runtime/cgo
+  // stackhuard0 是对比 Go 栈增长的 prologue 的栈指针
+  // 如果 sp 寄存器比 stackguard 小（由于栈忘低地址方向增长），会触发栈拷贝和调度
+  // 通常情况下：stackguard0 = stack.lo + StackGuard，但被抢占时会变成 StackPreempt
+	stackguard0 uintptr // offset known to liblink
+  // stackguard1 时对比 C 栈增长的 prologue 的栈指针
+  // 当位于 g0 的 gsignal 栈上时，值为 stack.lo + StackGuard
+  // 在其他栈上值为 ~0 用于触发 morestackc(并 crash)调用
+	stackguard1 uintptr // offset known to liblink
+  ...
+  // sched 描述了执行现场
+	sched       gobuf
+}
+</code></pre>
+<h2 id="go-调用栈帧内存布局">Go 调用栈帧内存布局</h2>
+<h3 id="栈帧布局">栈帧布局</h3>
+<p><code>runtime/stack.go</code> 中有 x86 架构下的栈帧布局示意图</p>
+<pre><code class="language-go">// (x86)
+// +------------------+
+// | args from caller |
+// +------------------+ &lt;- frame-&gt;argp
+// |  return address  |
+// +------------------+
+// |  caller's BP (*) | (*) if framepointer_enabled &amp;&amp; varp &lt; sp
+// +------------------+ &lt;- frame-&gt;varp
+// |     locals       |
+// +------------------+
+// |  args to callee  |
+// +------------------+ &lt;- frame-&gt;sp
+</code></pre>
+<p>在 <strong>x86架构下，golang栈帧布局从上（高地址）到下（低地址）依次为：这个函数帧的调用者传入的参数， 这个函数帧的返回地址，调用者调用时的BP快照（见上文<code>FP</code>用法原理），该帧本地变量，该帧调用其它函数需要传递的参数。</strong></p>
+<h4 id="完整的栈结构图">完整的栈结构图</h4>
+<pre><code>                       -----------------                                           
+                       current func arg0                                           
+                       ----------------- &lt;----------- FP(pseudo FP)                
+                        caller ret addr                                            
+                       +---------------+ &lt;----------- 这里是 _g_.sched.hi 吗？
+                       | caller BP(*)  |                                           
+                       ----------------- &lt;----------- SP(pseudo SP，实际上是当前栈帧的 BP 位置)
+                       |   Local Var0  |                                           
+                       -----------------                                           
+                       |   Local Var1  |                                           
+                       -----------------                                           
+                       |   Local Var2  |                                           
+                       -----------------                -                          
+                       |   ........    |                                           
+                       -----------------                                           
+                       |   Local VarN  |                                           
+                       -----------------                                           
+                       |               |                                           
+                       |               |                                           
+                       |  temporarily  |                                           
+                       |  unused space |                                           
+                       |               |                                           
+                       |               |                                           
+                       -----------------                                           
+                       |  call retn    |                                           
+                       -----------------                                           
+                       |  call ret(n-1)|                                           
+                       -----------------                                           
+                       |  ..........   |                                           
+                       -----------------                                           
+                       |  call ret1    |                                           
+                       -----------------                                           
+                       |  call argn    |                                           
+                       -----------------                                           
+                       |   .....       |                                           
+                       -----------------                                           
+                       |  call arg3    |                                           
+                       -----------------                                           
+                       |  call arg2    |                                           
+                       |---------------|                                           
+                       |  call arg1    |                                           
+                       -----------------   &lt;------------  hardware SP 位置           
+                       | return addr   |                                           
+                       +---------------+   &lt;----------- 这里是 _g_.sched.lo 吗？
+                                                                                   
+</code></pre>
+<h3 id="go-栈管理机制">Go 栈管理机制</h3>
+<p>Go 使用<strong>连续栈</strong>机制进行管理栈空间。</p>
+<p>在 Go1.3 以前使用<strong>分段栈</strong>：</p>
+<p>在栈空间用完后，分配一块新的内存地址，在这个新栈中包含旧栈的地址。</p>
+<p>问题：这种设计的缺陷很容易破坏缓存的局部性原理，从而降低程序的运行时性能。收缩栈的操作太过昂贵，在循环中重复分裂，收缩，释放的操作会付出很大的开销。这就是<strong>热点分裂问题（hot split problem）</strong></p>
+<p>从 Go1.4 之后的版本中，使用了<strong>连续栈</strong>机制，也叫栈拷贝。</p>
+<p>栈拷贝的方式是创建一个新的栈，它的大小是旧栈的两倍，并把旧栈完全拷贝进去。收缩操作不做处理，再次增长时使用刚才的空间。</p>
+<h4 id="栈是如何拷贝的">栈是如何拷贝的</h4>
+<p>由于栈中的变量在 Go 中能够获得其地址，因此最终会出现指向栈的指针，如果直接拷贝，任何指向旧栈的指针都会失效。</p>
+<p>所以 Go 的内存安全机制规定，任何能够指向栈的指针都必须存在于栈中。</p>
+<p>在编译器的逃逸分析中，所有有可能逃逸的变量，都会被分配在堆上。剩下栈中的指针，指向的都是栈里的数据。</p>
+<h5 id="go-没有采用-x86-64-架构函数传参优化">Go 没有采用 x86-64 架构函数传参优化</h5>
+<p>在 x86-64 架构下，增加了许多通用寄存器，C 系语言为了优化，会将参数部分（最多6个）使用寄存器直接传递，但是在 Go 中，编译器强制规定<strong>函数的传参全部使用栈传递，不使用寄存器传参</strong>。</p>
+<h2 id="执行栈分配过程">执行栈分配过程</h2>
+<h3 id="从创建-goroutine-开始">从创建 goroutine 开始</h3>
+<pre><code class="language-go">// go 函数会被编译为 runtime.newproc 的调用
+// 用 siz 字节的参数创建运行 fn 调用的 goroutine
+// 这个调用的堆栈布局是特殊的，它假设传递给 fn 的参数是进阶在 &amp;fn 之上的堆栈上的。
+// 因此它们在逻辑上是 newproc 的参数框架的一部分
+func newproc(siz int32, fn *funcval) {
+  // 从 fn 的地址增加一个指针的长度，从而获取第一参数地址
+	argp := add(unsafe.Pointer(&amp;fn), sys.PtrSize)
+  // 获取 g 指针，编译器会编译为从 TLS 或其他专用寄存器中获取
+  // 获取到的是 caller g 吗？
+	gp := getg()
+  // 获取调用方 PC
+	pc := getcallerpc()
+  // 使用 g0 系统栈创建新的 goroutine
+	systemstack(func() {
+    // 创建 g 的函数，传入了 fn 函数的入口地址，argp 调用函数参数的起始位置，siz 参数长度，
+    // gp caller g，caller pc（创建 goroutine 语句的地址）
+		newg := newproc1(fn, argp, siz, gp, pc)
+
+		_p_ := getg().m.p.ptr()
+		runqput(_p_, newg, true)
+
+		if mainStarted {
+			wakep()
+		}
+	})
+}
+</code></pre>
+<h4 id="解析-newproc-调用前的过程">解析 newproc 调用前的过程</h4>
+<p>也就是 fn 在哪，fn 之上的参数是如何分配的。</p>
+<p>有参数的情况</p>
+<pre><code class="language-go">package main
+
+func hello(msg string) {
+	println(msg)
+}
+
+func main() { // 7 行
+	go hello(&quot;hello world&quot;) // 8 行
+}
+</code></pre>
+<pre><code class="language-assembly">&quot;&quot;.main STEXT size=91 args=0x0 locals=0x28
+	......
+	0x000f 00015 (hello.go:7)	SUBQ	$40, SP // 栈扩大 40 字节
+	0x0013 00019 (hello.go:7)	MOVQ	BP, 32(SP) // caller BP，由 callee 存储
+	0x0018 00024 (hello.go:7)	LEAQ	32(SP), BP // callee BP 的栈从 32(SP) 开始
+	......
+	0x001d 00029 (hello.go:8)	MOVL	$16, (SP) // 将 16 放到 SP 的位置，16 是第一个参数 siz，因为是 int32，所以是 MOVL。数字是 16 是因为有 string.data 和 string.len 两个参数加一起占 16 个字节
+	0x0024 00036 (hello.go:8)	LEAQ	&quot;&quot;.hello·f(SB), AX // 将 hello 的调用地址传给 AX
+	0x002b 00043 (hello.go:8)	MOVQ	AX, 8(SP) // 将 hello 的调用地址放入 8(SP) 的位置
+	0x0030 00048 (hello.go:8)	LEAQ	go.string.&quot;hello world&quot;(SB), AX // 将“hello world”的地址放入 AX
+	0x0037 00055 (hello.go:8)	MOVQ	AX, 16(SP) // 将字符串地址放在 16(SP) 的位置
+	0x003c 00060 (hello.go:8)	MOVQ	$11, 24(SP) // 将 $11 放在 24(SP) 的位置，11 是 string 的长度，string 是结构体，结构体在传参中会扁平化为多个参数
+	0x0045 00069 (hello.go:8)	CALL	runtime.newproc(SB) // call 指令 = push+jmp，所以会将 newproc 地址入栈
+	0x004a 00074 (hello.go:9)	MOVQ	32(SP), BP // 复原 caller BP
+	0x004f 00079 (hello.go:9)	ADDQ	$40, SP // 缩小栈
+</code></pre>
+<p>特殊的栈布局</p>
+<pre><code>             栈布局
+40(SP)+-----------------+      高地址
+      |    caller BP    |       
+32(SP)+-----------------+ &lt;-- main.BP
+      |  11 string.len  |
+24(SP)+-----------------+ 
+      | &amp;&quot;hello world&quot;  |
+16(SP)+-----------------+ &lt;-- fn + sys.PtrSize
+      |      hello      |
+8(SP) +-----------------+ &lt;-- fn
+      |       siz       |
+(SP)  +-----------------+ &lt;-- SP
+      |    newproc PC   |  
+      +-----------------+ callerpc: 要运行的 Goroutine 的 PC
+      |                 |
+      |                 |       低地址
+</code></pre>
+<h4 id="newproc1-调用">newproc1 调用</h4>
+<pre><code class="language-go">func newproc1(fn *funcval, argp unsafe.Pointer, narg int32, callergp *g, callerpc uintptr) *g {
+  // 在系统栈中得到的是 g0
+	_g_ := getg()
+  ......
+	siz := narg
+	siz = (siz + 7) &amp;^ 7 // 内存对齐
+
+	// 参数大小不能超过 2048-4*8-8（64位），可以分配更大的栈，但没必要
+	if siz &gt;= _StackMin-4*sys.RegSize-sys.RegSize {
+		throw(&quot;newproc: function arguments too large for new goroutine&quot;)
+	}
+
+	_p_ := _g_.m.p.ptr()
+  // 尝试复用运行结束的 G
+	newg := gfget(_p_)
+	if newg == nil {
+    // 分配一个新的 g 结构, 包含一个 stacksize 字节的的栈
+    // 总是 2KB？
+		newg = malg(_StackMin)
+		casgstatus(newg, _Gidle, _Gdead)
+		allgadd(newg) // 将 _Gdead 状态的 newg 添加到 allg，防止被 GC 扫描到
+	}
+  ......
+}
+
+func malg(stacksize int32) *g {
+	newg := new(g)
+	if stacksize &gt;= 0 {
+    // 有些系统需要额外的栈空间
+    // 将 stacksize 舍入为 2 的指数，目的是为了消除 _StackSystem 对栈的影响
+		stacksize = round2(_StackSystem + stacksize)
+		systemstack(func() {
+			newg.stack = stackalloc(uint32(stacksize))
+		})
+    // 设置堆栈保护位置
+		newg.stackguard0 = newg.stack.lo + _StackGuard
+		newg.stackguard1 = ^uintptr(0)
+    ......
+	}
+	return newg
+}
+</code></pre>
+<h3 id="执行栈的分配">执行栈的分配</h3>
+<p>前置部分知识：[[Go 内存分配器]]</p>
+<p>栈可能从两个不同的位置被分配：小栈和大栈。小栈指大小为 2K/4K/8K/16K 的栈，大栈则是更大的栈。 <code>stackalloc</code> 基本上也就是在权衡应该从哪里分配出一个执行栈，返回所在栈的低位和高位。</p>
+<pre><code class="language-go">func stackalloc(n uint32) stack {
+  // g0
+	thisg := getg()
+  ......
+
+	// 小栈由固定大小的空闲链表分配器进行分配
+	// 大栈由专用的 span 分配
+	var v unsafe.Pointer
+	if n &lt; _FixedStack&lt;&lt;_NumStackOrders &amp;&amp; n &lt; _StackCacheSize {
+    // 小栈分配
+	} else {
+    // 大栈分配
+	}
+  ......
+	return stack{uintptr(v), uintptr(v) + uintptr(n)}
+}
+</code></pre>
+<h4 id="小栈">小栈</h4>
+<p>对于较小的栈可以从 <code>stackpool</code> 或者 <code>stackcache</code> 中分配，这取决于当产生栈分配时，goroutine 是否正处于 <code>exitsyscall</code> 或 <code>procresize</code>，或是正在发生抢占 <code>thisg.m.preemptoff != &quot;&quot;</code>。</p>
+<pre><code class="language-go">order := uint8(0)
+n2 := n
+for n2 &gt; _FixedStack {
+  order++
+  n2 &gt;&gt;= 1
+}
+var x gclinkptr
+// 检查是否需要从全局池（stackpool）中分配栈
+if stackNoCache != 0 || thisg.m.p == 0 || thisg.m.preemptoff != &quot;&quot; {
+  lock(&amp;stackpool[order].item.mu)
+  x = stackpoolalloc(order)
+  unlock(&amp;stackpool[order].item.mu)
+} else {
+  // 如果不需要就从 mcache.stackcache 中分配
+  c := thisg.m.p.ptr().mcache
+  x = c.stackcache[order].list
+  if x.ptr() == nil { // 提取失败，扩容再重试
+    stackcacherefill(c, order)
+    x = c.stackcache[order].list
+  }
+  c.stackcache[order].list = x.ptr().next
+  c.stackcache[order].size -= uintptr(n)
+}
+v = unsafe.Pointer(x)
+
+// mcache.stackcache 扩容
+func stackcacherefill(c *mcache, order uint8) {
+  ......
+	var list gclinkptr
+	var size uintptr
+	lock(&amp;stackpool[order].item.mu)
+  // 从全局池（stackpool）中获取一些 stack
+	// 获取所允许的容量的一半来防止 thrashing
+	for size &lt; _StackCacheSize/2 {
+		x := stackpoolalloc(order)
+		x.ptr().next = list
+		list = x
+		size += _FixedStack &lt;&lt; order
+	}
+	unlock(&amp;stackpool[order].item.mu)
+	c.stackcache[order].list = list
+	c.stackcache[order].size = size
+}
+
+// 从空闲池中分配一个栈，必须在持有 stackpool[order].item.mu 下调用
+func stackpoolalloc(order uint8) gclinkptr {
+	list := &amp;stackpool[order].item.span // mSpanList 存储了 mspan 的头部和尾部
+	s := list.first // 链表头
+	lockWithRankMayAcquire(&amp;mheap_.lock, lockRankMheap)
+  // 证明没有缓存已空
+	if s == nil {
+    // 从 mheap 上申请，一次申请 32KB 内存即 4 页（(32*1024) &gt;&gt; 13）
+		s = mheap_.allocManual(_StackCacheSize&gt;&gt;_PageShift, &amp;memstats.stacks_inuse)
+    ......
+    // OpenBSD 6.4+ 对栈内存有特殊的需求，所以只要我们从堆上申请栈内存，需要在申请后做一些额外处理
+		osStackAlloc(s)
+		s.elemsize = _FixedStack &lt;&lt; order
+		for i := uintptr(0); i &lt; _StackCacheSize; i += s.elemsize {
+      // gclinkptr 也是一个指针类型
+      // 作用是屏蔽gc扫描
+			x := gclinkptr(s.base() + i)
+      // 链表头插法
+			x.ptr().next = s.manualFreeList
+			s.manualFreeList = x
+		}
+		list.insert(s)
+	}
+	x := s.manualFreeList
+	if x.ptr() == nil {
+		throw(&quot;span has no free stacks&quot;)
+	}
+	s.manualFreeList = x.ptr().next
+	s.allocCount++
+	if s.manualFreeList.ptr() == nil {
+		// 所有内存已经分配完毕，删除节点 s
+		list.remove(s)
+	}
+	return x
+}
+</code></pre>
+<h4 id="大栈">大栈</h4>
+<p>大空间从 <code>stackLarge</code> 进行分配</p>
+<pre><code class="language-go">var s *mspan
+npage := uintptr(n) &gt;&gt; _PageShift
+log2npage := stacklog2(npage)
+
+// 尝试从 stackLarge 缓存中获取堆栈。
+lock(&amp;stackLarge.lock)
+if !stackLarge.free[log2npage].isEmpty() {
+  s = stackLarge.free[log2npage].first
+  stackLarge.free[log2npage].remove(s)
+}
+unlock(&amp;stackLarge.lock)
+
+lockWithRankMayAcquire(&amp;mheap_.lock, lockRankMheap)
+
+if s == nil {
+  // 如果无法从缓存中获取，则从堆中分配一个新的栈
+  s = mheap_.allocManual(npage, &amp;memstats.stacks_inuse)
+  if s == nil {
+    throw(&quot;out of memory&quot;)
+  }
+  osStackAlloc(s)
+  s.elemsize = uintptr(n)
+}
+v = unsafe.Pointer(s.base())
+</code></pre>
+<h4 id="堆上分配">堆上分配</h4>
+<p>无论是大栈还是小栈的分配，都是使用从 <code>mheap</code> 上申请的缓存，通过 <code>allocManual</code> 方法：</p>
+<pre><code class="language-go">func (h *mheap) allocManual(npages uintptr, stat *uint64) *mspan {
+	return h.allocSpan(npages, true, 0, stat)
+}
+</code></pre>
+<p>[[Go 内存分配器]]</p>
+<p><strong>总结</strong></p>
+<figure data-type="image" tabindex="1"><img src="https://tva1.sinaimg.cn/large/008eGmZEly1gmv4h8v5k2j30v10l4wgo.jpg" alt="summary" loading="lazy"></figure>
+<h2 id="栈管理">栈管理</h2>
+<p>早期几个版本中发生过一些变化：</p>
+<ul>
+<li>v1.0 ~ v1.1 — 最小栈内存空间为 4KB；</li>
+<li>v1.2 — 将最小栈内存提升到了 8KB；</li>
+<li>v1.3 — 使用<strong>连续栈</strong>替换之前版本的分段栈；</li>
+<li>v1.4 — 将最小栈内存降低到了 2KB；</li>
+</ul>
+<p>Goroutine 的初始栈内存在最初的几个版本中多次修改，从 4KB 提升到 8KB 是临时的解决方案，其目的是为了减轻分段栈中的栈分裂对程序的性能影响；在 v1.3 版本引入连续栈之后，Goroutine 的初始栈大小降低到了 2KB，进一步减少了 Goroutine 占用的内存空间。</p>
+<h3 id="分段栈">分段栈</h3>
+<p>Go 会在编译时在每个 go 函数入口处增加一个栈空间检查代码，如果栈用光了，就会去调用 <code>morestack</code> 函数。<code>morestack</code> 函数会分配一段新内存用作栈空间，接下来它会将有关栈的各种数据信息写入栈底的一个 struct 中，包括上一段的堆栈地址。然后重启 goroutine 来重试导致栈用光的函数。这就是“栈分裂”。</p>
+<pre><code>  +---------------+
+  |               |  &lt;---+ 新栈
+  |   unused      |
+  |   stack       |
+  |   space       |
+  +---------------+
+  |    Foobar     |
+  |               |
+  +---------------+
+  |               |
+  |  lessstack    |
+  +---------------+
+  | Stack info    |
+  |               |-----+
+  +---------------+     |
+                        |
+                        |
+  +---------------+     |
+  |    Foobar     |     |
+  |               | &lt;---+
+  +---------------+
+  | rest of stack | &lt;---+ 旧栈
+  |               |
+</code></pre>
+<p>分段栈回溯机理：在新栈的底部，我们插入了 <code>lessstack</code> 函数。当我们从导致栈分裂的函数返回时，我们会回到 <code>lessstack</code>， <code>lessstack</code> 会查找 stack 底部的那个 struct，并调整栈指针（rsp），使得返回前一段的栈空间。这样，我们就将新的栈释放掉了。</p>
+<p>分段栈也有瑕疵。这两个栈彼此没有连续。 这种设计的缺陷很容易破坏缓存的<strong>局部性原理</strong>，从而降低程序的运行时性能。</p>
+<p>同时<strong>收缩栈是一个相对昂贵的操作</strong>。如果是在一个循环中分裂栈情况更明显。函数会增长栈，分裂栈，返回栈，并且释放栈分段。如果是在循环里面做这些操作，那么将会付出很大的开销。例如循环一次经历了这些过程，当下一次循环时栈又被耗尽，又得重新分配栈分段，然后又被释放掉，周而复始，循环往复，开销就会巨大。</p>
+<p>这就是熟知的 <strong><code>hot split problem</code></strong> （热点分裂问题）。这是Golang开发组切换到新的栈管理方式的主要原因，新方式称为<strong>栈拷贝</strong>。</p>
+<h3 id="连续栈栈拷贝">连续栈（栈拷贝）</h3>
+<p>栈拷贝开始很像分段栈。协程运行，使用栈空间，当栈将要耗尽时，触发相同的栈溢出检测。但是，不像分段栈里有一个回溯链接，<strong>栈拷贝的方式则是创建了一个新的分段，它是旧栈的两倍大小，并且把旧栈完全拷贝进来。</strong></p>
+<p>但栈拷贝也没有想象中的那么简单。由于栈中的变量在 Golang 中能够获取其地址，因此最终会出现指向栈的指针。而如果轻易拷贝移动栈，任何指向旧栈的指针都会失效。</p>
+<p>所以 Golang 的内存安全机制规定，任何能够指向栈的指针都必须存在于栈中。这就可以通过垃圾收集器协助栈拷贝，因为垃圾收集器需要知道哪些指针可以进行回收，所以可以查到栈上的哪些部分是指针，当进行栈拷贝时，会更新指针信息只相信目标，以及它相关的所有指针。</p>
+<p>特殊的是 <code>runtime</code> 的大量核心调度函数和 GC 核心都是用 C 语言写的，这些函数都获取不到指针信息，那么它们就无法复制。这种都会在一个特殊的栈中执行（g0），并且由 <code>runtime</code> 开发者定义栈尺寸。</p>
+<h4 id="汇编中的连续栈">汇编中的连续栈</h4>
+<p>在机器架构层面，很多关于函数的公用操作都会被提取为固定代码，在函数运行时插入到代码片段的前后部分中，其中函数代码前插入汇编，称为<code>prolog</code>，一般只会有一个<code>prolog</code>。在函数代码后插入汇编，称为<code>epilog</code>，一般可以有多个<code>epilog</code>。这就是“序言”和“后记”。</p>
+<p><strong>golang就是用<code>prolog + epilog</code>的方式来实现连续栈的检测和复制的。</strong></p>
+<pre><code class="language-assembly">&quot;&quot;.main STEXT size=105 args=0x0 locals=0x20
+	0x0000 00000 (main.go:23)	TEXT	&quot;&quot;.main(SB), ABIInternal, $32-0
+	0x0000 00000 (main.go:23)	MOVQ	(TLS), CX
+	0x0009 00009 (main.go:23)	CMPQ	SP, 16(CX)
+	0x000d 00013 (main.go:23)	JLS	98
+	// main func body
+	0x0062 00098 (main.go:26)	NOP
+	0x0062 00098 (main.go:23)	PCDATA	$1, $-1
+	0x0062 00098 (main.go:23)	PCDATA	$0, $-1
+	0x0062 00098 (main.go:23)	CALL	runtime.morestack_noctxt(SB)
+	0x0067 00103 (main.go:23)	JMP	0
+</code></pre>
+<h4 id="栈溢出检测实现">栈溢出检测实现</h4>
+<p>TLS(thred-local storage) 是伪寄存器，它表示 <code>g</code> 结构体的位置。并且只能被载入到另一个寄存器中（因为本质上不是寄存器，是内存位置？）。16(TLS) 指向的是 <code>g.stackguard0</code>。<code>g.stackguard0</code> 在上面的源码中显示被设置为 <code>g.stack.lo + _StackGuard</code> 的位置，也就是保留栈顶的一段（<code>_StackGuard</code>）位置。所以每一个不是 <code>nosplit</code> 的函数都会在编译后的函数中加入检查，比较 SP 和 <code>g.stackguard0</code> 的值。</p>
+<p>这就表示：<strong>栈溢出发生在整个函数执行前就能被侦测到，而不是函数内某条语句执行时。</strong></p>
+<figure data-type="image" tabindex="2"><img src="https://tva1.sinaimg.cn/large/008eGmZEly1gmwi88j939j30cu0c0dg4.jpg" alt="StackGuard" loading="lazy"></figure>
+<h2 id="执行栈的伸缩">执行栈的伸缩</h2>
+<h3 id="栈的扩张">栈的扩张</h3>
+<p>经过溢出检测后，会跳转到汇编实现的函数上进行栈扩容，如果函数不需要 <code>g.sched.ctxt</code> 字段，则会调用 <code>runtime.nirestack_noctxt</code>，否则会被编译为直接调用 <code>runtime.morestack</code>。</p>
+<pre><code class="language-assembly">TEXT runtime·morestack_noctxt(SB),NOSPLIT,$0
+	MOVL	$0, DX // DX 中存储着 g.sched.ctxt 字段，置为0意为不需要保存。
+	JMP	runtime·morestack(SB)
+
+TEXT runtime·morestack(SB),NOSPLIT,$0-0
+	// 检查要增加的是否为 g0 栈，不能扩容 g0 栈
+	get_tls(CX)
+	MOVQ	g(CX), BX
+	MOVQ	g_m(BX), BX
+	MOVQ	m_g0(BX), SI
+	CMPQ	g(CX), SI
+	JNE	3(PC)
+	CALL	runtime·badmorestackg0(SB)
+	CALL	runtime·abort(SB)
+
+	// 不能扩容信号栈（gsignal stack）
+	MOVQ	m_gsignal(BX), SI
+	CMPQ	g(CX), SI
+	JNE	3(PC)
+	CALL	runtime·badmorestackgsignal(SB)
+	CALL	runtime·abort(SB)
+
+	// 从 f 调用
+	// 将 m-&gt;morebuf 设置为 f 的调用方
+	NOP	SP	// tell vet SP changed - stop checking offsets
+	MOVQ	8(SP), AX	// f's caller's PC
+	MOVQ	AX, (m_morebuf+gobuf_pc)(BX)
+	LEAQ	16(SP), AX	// f's caller's SP
+	MOVQ	AX, (m_morebuf+gobuf_sp)(BX)
+	get_tls(CX)
+	MOVQ	g(CX), SI
+	MOVQ	SI, (m_morebuf+gobuf_g)(BX)
+
+	// 设置当前的执行栈（g.sched）为 f
+	MOVQ	0(SP), AX // f's PC
+	MOVQ	AX, (g_sched+gobuf_pc)(SI)
+	MOVQ	SI, (g_sched+gobuf_g)(SI)
+	LEAQ	8(SP), AX // f's SP
+	MOVQ	AX, (g_sched+gobuf_sp)(SI)
+	MOVQ	BP, (g_sched+gobuf_bp)(SI)
+	MOVQ	DX, (g_sched+gobuf_ctxt)(SI)
+
+	// 切换到 g0 栈上调用 newstack
+	MOVQ	m_g0(BX), BX
+	MOVQ	BX, g(CX)
+	MOVQ	(g_sched+gobuf_sp)(BX), SP
+	CALL	runtime·newstack(SB)
+	CALL	runtime·abort(SB)	// crash if newstack returns
+	RET
+</code></pre>
+<p><code>newstack</code> 在前半部分承担了对 Goroutine 进行抢占的任务[[Go 协作与抢占]]，在后半部分则是真正的扩张。</p>
+<pre><code class="language-go">func newstack() {
+  // g0
+	thisg := getg()
+  ......
+
+  // 寻找要执行的 g
+	gp := thisg.m.curg
+
+  ......
+
+	morebuf := thisg.m.morebuf
+	thisg.m.morebuf.pc = 0
+	thisg.m.morebuf.lr = 0
+	thisg.m.morebuf.sp = 0
+	thisg.m.morebuf.g = 0
+
+	......
+	sp := gp.sched.sp
+	if sys.ArchFamily == sys.AMD64 || sys.ArchFamily == sys.I386 || sys.ArchFamily == sys.WASM {
+		// 对 morestack 的调用花费了一个字，是因为 call 指令吗？
+		sp -= sys.PtrSize
+	}
+
+	// 分配一个更大（2倍）的栈并移动
+	oldsize := gp.stack.hi - gp.stack.lo
+	newsize := oldsize * 2
+
+  // 需要的栈太大， 直接溢出
+	if newsize &gt; maxstacksize {
+		print(&quot;runtime: goroutine stack exceeds &quot;, maxstacksize, &quot;-byte limit\n&quot;)
+		print(&quot;runtime: sp=&quot;, hex(sp), &quot; stack=[&quot;, hex(gp.stack.lo), &quot;, &quot;, hex(gp.stack.hi), &quot;]\n&quot;)
+		throw(&quot;stack overflow&quot;)
+	}
+
+  // goroutine 必须是正在执行中才会来调用 newstack，所以状态一定是 Grunning(or Gscanrunning)
+  // 转为 Gcopystack
+	casgstatus(gp, _Grunning, _Gcopystack)
+
+	// 因为 goroutine 处于 Gcopystack 状态，所以我们在复制栈时不会被并发的 gc 影响。
+	copystack(gp, newsize)
+  ......
+  // 继续执行
+	casgstatus(gp, _Gcopystack, _Grunning)
+	gogo(&amp;gp.sched)
+}
+</code></pre>
+<h3 id="栈的拷贝">栈的拷贝</h3>
+<p>栈拷贝的难点在于 Go 栈上的变量会包含自己的地址，当我们拷贝了一个指向原栈的指针时，拷贝后的指针就会变为无效指针。所以 Go 的策略是<strong>只有栈上分配的指针才能指向栈上的地址，否则这个指针指向的对象会重新在堆中进行分配（逃逸）。</strong></p>
+<pre><code class="language-go">func copystack(gp *g, newsize uintptr) {
+  // 旧栈
+	old := gp.stack
+	used := old.hi - gp.sched.sp
+
+	// 获取新栈
+	new := stackalloc(uint32(newsize))
+
+	// 计算调节幅度
+	var adjinfo adjustinfo
+	adjinfo.old = old
+	adjinfo.delta = new.hi - old.hi
+
+	// 调整 sudog，必要时与 channel 操作同步
+	ncopy := used
+	if !gp.activeStackChans {
+		adjustsudogs(gp, &amp;adjinfo)
+	} else {
+		adjinfo.sghi = findsghi(gp, old)
+		ncopy -= syncadjustsudogs(gp, used, &amp;adjinfo)
+	}
+
+	// 复制栈
+	memmove(unsafe.Pointer(new.hi-ncopy), unsafe.Pointer(old.hi-ncopy), ncopy)
+
+	// 新栈替换旧栈
+	gp.stack = new
+	gp.stackguard0 = new.lo + _StackGuard // 注意：可能会破坏一个抢占请求
+	gp.sched.sp = new.hi - used
+	gp.stktopsp += adjinfo.delta
+
+	// 释放旧栈
+	if stackPoisonCopy != 0 {
+		fillstack(old, 0xfc)
+	}
+	stackfree(old)
+}
+</code></pre>
+<h3 id="栈的收缩">栈的收缩</h3>
+<p>栈的收缩发生在 GC 时</p>
+<pre><code class="language-go">func scanstack(gp *g, gcw *gcWork) {
+  ......
+	switch readgstatus(gp) &amp;^ _Gscan {
+	default:
+		print(&quot;runtime: gp=&quot;, gp, &quot;, goid=&quot;, gp.goid, &quot;, gp-&gt;atomicstatus=&quot;, readgstatus(gp), &quot;\n&quot;)
+		throw(&quot;mark - bad status&quot;)
+	case _Gdead:
+		return
+	case _Grunning:
+		print(&quot;runtime: gp=&quot;, gp, &quot;, goid=&quot;, gp.goid, &quot;, gp-&gt;atomicstatus=&quot;, readgstatus(gp), &quot;\n&quot;)
+		throw(&quot;scanstack: goroutine not stopped&quot;)
+	case _Grunnable, _Gsyscall, _Gwaiting:
+		// 只在这三种状态下才能收缩
+	}
+  ......
+  // 检查是否能够安全的收缩栈，比如系统调用时不可以，因为可能有指向栈的指针。
+	if isShrinkStackSafe(gp) {
+		// Shrink the stack if not much of it is being used.
+		shrinkstack(gp)
+	} else {
+		// Otherwise, shrink the stack at the next sync safe point.
+		gp.preemptShrink = true
+	}
+  ......
+}
+
+func shrinkstack(gp *g) {
+	oldsize := gp.stack.hi - gp.stack.lo
+	newsize := oldsize / 2 // 收缩幅度为减半
+	// 但不能小于最小栈大小
+	if newsize &lt; _FixedStack {
+		return
+	}
+	// 仅当栈使用量小于四分之一时才会对栈进行收缩
+	avail := gp.stack.hi - gp.stack.lo
+	if used := gp.stack.hi - gp.sched.sp + _StackLimit; used &gt;= avail/4 {
+		return
+	}
+
+	copystack(gp, newsize)
+}
+</code></pre>
+<h2 id="goroutine-执行现场">Goroutine 执行现场</h2>
+<p>在上面的 <code>morestack</code> 中可以看到一些对 <code>g.sched(gobuf)</code> 字段的处理：</p>
+<pre><code class="language-assembly">	// 设置当前的执行栈（g.sched）为 f
+	MOVQ	0(SP), AX // f's PC
+	MOVQ	AX, (g_sched+gobuf_pc)(SI)
+	MOVQ	SI, (g_sched+gobuf_g)(SI)
+	LEAQ	8(SP), AX // f's SP
+	MOVQ	AX, (g_sched+gobuf_sp)(SI)
+	MOVQ	BP, (g_sched+gobuf_bp)(SI)
+	MOVQ	DX, (g_sched+gobuf_ctxt)(SI)
+</code></pre>
+<p>以及调用 <code>gogo</code> 函数时需要传入 <code>gobuf</code>：</p>
+<pre><code class="language-go">func newstack() {
+	gogo(&amp;gp.sched)
+}
+</code></pre>
+<p>剩余内容在 [[Go runtime]] 中也有体现。</p>
+]]></content>
+    </entry>
+    <entry>
         <title type="html"><![CDATA[Kubernetes 网络笔记]]></title>
         <id>https://cnbailian.github.io/post/kubernetes-network-notes/</id>
         <link href="https://cnbailian.github.io/post/kubernetes-network-notes/">
@@ -2132,6 +2777,1147 @@ root@ubuntu:~$ ip netns exec net0 python -m SimpleHTTPServer 80
 <li><a href="https://segmentfault.com/a/1190000009043962">netfilter/iptables简介</a></li>
 <li><a href="http://xstarcd.github.io/wiki/Linux/iptables_forward_internetshare.html">通过iptables实现端口转发和内网共享上网</a></li>
 </ol>
+]]></content>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Go Runtime 笔记]]></title>
+        <id>https://cnbailian.github.io/post/go-runtime-notes/</id>
+        <link href="https://cnbailian.github.io/post/go-runtime-notes/">
+        </link>
+        <updated>2021-01-25T02:46:20.000Z</updated>
+        <summary type="html"><![CDATA[<p>本文用于记录 Go 语言运行时及调度器方面源码的学习笔记。</p>
+]]></summary>
+        <content type="html"><![CDATA[<p>本文用于记录 Go 语言运行时及调度器方面源码的学习笔记。</p>
+<!--more-->
+<h2 id="启动过程">启动过程</h2>
+<p>使用 gdb 调试程序，在 macOS 下注意 build 时使用增加 <code>-ldflags=-compressdwarf=false</code> 参数，并且<a href="https://segmentfault.com/q/1010000004136334">自建证书给 gdb</a>。</p>
+<h4 id="寻找入口">寻找入口</h4>
+<p>使用 <code>info files</code> 查看执行文件，使用 <code>breakpoint</code> 定位 entry point 所在的文件位置，确定入口文件。</p>
+<pre><code class="language-shell">(gdb) info files
+Symbols from &quot;/Users/bailian/GoProject/go-build/go-build&quot;.
+Local exec file:
+	`/Users/bailian/GoProject/go-build/go-build', file type mach-o-x86-64.
+	Entry point: 0x1063f40
+	0x0000000001001000 - 0x00000000010a6f0a is .text
+	......
+(gdb) b *0x1063f40
+Breakpoint 2 at 0x1063f40: file /Users/bailian/GoProject/go/src/runtime/rt0_darwin_amd64.s, line 8.
+</code></pre>
+<p><em>Go 使用的 plan9 汇编语言......</em></p>
+<p>可以在汇编文件中看到执行程序的初始化流程：</p>
+<pre><code class="language-asm">// rt0 其实是 runtime0 的缩写，意为运行时的创生，随后所有创建的都是 1 为后缀。
+// 操作系统通过入口参数的约定与应用程序进行沟通，为了支持从系统给运行时传递参数，Go 程序 在进行引导时将对这部分参数进行处理。
+// 程序刚刚启动时，栈指针 SP 的前两个值分别对应 argc 和 argv，分别存储参数的数量和具体的参数的值
+TEXT _rt0_amd64(SB),NOSPLIT,$-8
+	MOVQ	0(SP), DI	// argc
+	LEAQ	8(SP), SI	// argv
+	JMP	runtime·rt0_go(SB)
+TEXT runtime·rt0_go(SB),NOSPLIT,$0
+	// 在偶数堆栈上向前复制参数
+	MOVQ	DI, AX		// argc
+	MOVQ	SI, BX		// argv
+	SUBQ	$(4*8+7), SP		// 2args 2auto
+	ANDQ	$~15, SP
+	MOVQ	AX, 16(SP)
+	MOVQ	BX, 24(SP)
+
+	// 初始化 g0 执行栈
+	MOVQ	$runtime·g0(SB), DI
+	LEAQ	(-64*1024+104)(SP), BX
+	MOVQ	BX, g_stackguard0(DI)
+	MOVQ	BX, g_stackguard1(DI)
+	MOVQ	BX, (g_stack+stack_lo)(DI)
+	MOVQ	SP, (g_stack+stack_hi)(DI)
+
+	// 确定 CPU 处理器的信息
+	MOVL	$0, AX
+	CPUID
+	MOVL	AX, SI
+	CMPL	AX, $0
+	JE	nocpuinfo
+	......
+needtls:
+#ifdef GOOS_darwin
+	// Darwin 系统跳过 TLS 设置
+	JMP ok
+#endif
+	// 设置 TLS 伪寄存器
+	LEAQ	runtime·m0+m_tls(SB), DI // DI = m0.tls
+	CALL	runtime·settls(SB) // 将 TLS 地址设置到 DI
+	// 使用它进行存储，确保能正常运行
+	get_tls(BX)
+	MOVQ	$0x123, g(BX)
+	MOVQ	runtime·m0+m_tls(SB), AX
+	CMPQ	AX, $0x123
+	JEQ 2(PC) // 跳转到下面的 get_tls 指令
+	CALL	runtime·abort(SB)
+ok:
+	// 程序刚刚启动，此时位于主线程
+	// 当前栈与资源保存在 g0
+	// 该线程保存在 m0
+	get_tls(BX)
+	LEAQ	runtime·g0(SB), CX
+	MOVQ	CX, g(BX)
+	LEAQ	runtime·m0(SB), AX
+
+	// g0 和 m0 是一组全局变量，在程序运行之初就已经存在。 除了程序参数外，会首先将 m0 与 g0 通过指针互相关联。
+	// save m-&gt;g0 = g0
+	MOVQ	CX, m_g0(AX)
+	// save m0 to g0-&gt;m
+	MOVQ	AX, g_m(CX)
+
+	// 在正式初始化运行时组件之前，还需要做一些校验和系统级的初始化工作，这包括：运行时类型检查， 系统参数的获取以及影响内存管理和程序调度的相关常量的初始化。
+	CLD				// convention is D is always left cleared
+	CALL	runtime·check(SB) // 运行时类型检查。 其本质上基本上属于对编译器翻译工作的一个校验，显然如果编译器的编译工作 不正确，运行时的运行过程便不是一个有效的过程。
+	
+	MOVL	16(SP), AX		// copy argc
+	MOVL	AX, 0(SP)
+	MOVQ	24(SP), AX		// copy argv
+	MOVQ	AX, 8(SP)
+	// argc, argv 作为来自操作系统的参数传递给 args 处理程序参数的相关事宜。
+	CALL	runtime·args(SB)
+	// 系统初始化
+	CALL	runtime·osinit(SB)
+	// 进行各种运行时组件初始化工作，这包括我们的调度器与内存分配器、回收器的初始化
+	CALL	runtime·schedinit(SB)
+
+	// create a new goroutine to start program
+	// 将入口函数作为参数，准备传递给第一个 G
+	MOVQ	$runtime·mainPC(SB), AX		// entry
+	PUSHQ	AX
+	PUSHQ	$0			// 参数大小
+	// 新建 goroutine，将参数传入
+	CALL	runtime·newproc(SB)
+	POPQ	AX
+	POPQ	AX
+
+	// 启动 M
+	CALL	runtime·mstart(SB)
+
+	CALL	runtime·abort(SB)	// mstart should never return
+	......
+
+// 全局变量 声明 runtime.mainPC 地址为 runtime.main 函数地址，RODATA read only data
+DATA	runtime·mainPC+0(SB)/8,$runtime·main(SB)
+GLOBL	runtime·mainPC(SB),RODATA,$8
+</code></pre>
+<h4 id="初始化">初始化</h4>
+<p><strong>args</strong></p>
+<img src="https://tva1.sinaimg.cn/large/008eGmZEly1gmeujrewwkj30u010yn4z.jpg" alt="img" style="zoom: 33%;" />
+<p><code>args</code> 函数将参数指针保存到了 <code>argc</code> 和 <code>argv</code> 这两个全局变量中， 供其他初始化函数使用，而后调用了平台特定的 <code>sysargs</code>。 对于 Darwin 系统而言，只负责获取程序的 <code>executable_path</code>。这个参数用于设置 <code>os</code> 包中的 <code>executablePath</code> 变量。</p>
+<pre><code class="language-go">func sysargs(argc int32, argv **byte) {
+	// skip over argv, envv and the first string will be the path
+	n := argc + 1
+	for argv_index(argv, n) != nil {
+		n++
+	}
+	executablePath = gostringnocopy(argv_index(argv, n+1))
+
+	// strip &quot;executable_path=&quot; prefix if available, it's added after OS X 10.11.
+	const prefix = &quot;executable_path=&quot;
+	if len(executablePath) &gt; len(prefix) &amp;&amp; executablePath[:len(prefix)] == prefix {
+		executablePath = executablePath[len(prefix):]
+	}
+}
+</code></pre>
+<p>而在 Linux 平台中，这个过程就变得复杂起来了。 与 Darwin 使用 <code>mach-o</code> 不同，Linux 使用 ELF 格式 [Matz et al. 2014]。 ELF 除了 argc, argv, envp 之外，会携带辅助向量（auxiliary vector） 将某些内核级的信息传递给用户进程，例如<strong>内存物理页大小</strong>。因此对于 Linux 而言，物理页大小在 <code>sysargs</code> 中便能直接完成初始化。</p>
+<h5 id="osinit">osinit</h5>
+<p><code>osinit</code> 完成对 CPU 核心数的获取，因为这与调度器有关。 而 Darwin 上由于使用的是 <code>mach-o</code> 格式，在此前的 <code>sysargs</code> 上 还没有确定内存页的大小，因而在这个函数中，还会额外使用 <code>sysctl</code> 完成物理页大小的查询。</p>
+<pre><code class="language-go">var ncpu int32
+
+// Linux
+func osinit() {
+	ncpu = getproccount()
+}
+
+// Darwin
+func osinit() {
+	ncpu = getncpu()
+	physPageSize = getPageSize() // 内部使用 sysctl 来获取物理页大小.
+}
+</code></pre>
+<blockquote>
+<p><code>Darwin</code> 从操作系统发展来看，是从 NeXTSTEP 和 FreeBSD 2.x 发展而来的后代， macOS 系统调用的特殊之处在于它提供了两套调用接口，一个是 Mach 调用，另一个则是 POSIX 调用。 Mach 是 NeXTSTEP 遗留下来的产物，其 BSD 层本质上是对 Mach 内核的一层封装。 尽管用户态进程可以直接访问 Mach 调用，但出于通用性的考虑， 物理页大小获取的方式是通过 POSIX <code>sysctl</code> 这个系统调用进行获取 [Bacon, 2007]。</p>
+<p>事实上 <code>Linux</code> 与 <code>Darwin</code> 下的系统调用如何参与到 Go 程序中去稍有不同，我们暂时不做深入讨论，留到以后再统一分析。</p>
+</blockquote>
+<p>可以看出，对运行时最为重要的两个系统级参数：CPU 核心数与内存物理页大小。</p>
+<h5 id="schedinit">schedinit</h5>
+<p><code>schedinit</code> 函数名表面上是调度器的初始化，但实际上它包含了所有核心组件的初始化工作。</p>
+<p>关于执行栈：[[Go 栈笔记]]</p>
+<p>关于内存分配器组件：[[Go 内存分配器]]</p>
+<pre><code class="language-go">func schedinit() {
+  _g_ := getg()
+	......
+  // 设置最大系统线程数量(M)
+	sched.maxmcount = 10000
+
+  // 初始化 skipPC，用于 traceback。
+	tracebackinit()
+  // 验证链接器(linker)的模块数据正确性
+	moduledataverify()
+  // 执行栈的初始化，将 stackpool 与 stackLarge 的双向链表置为 nil
+	stackinit()
+  // 内存分配器的初始化：初始化堆、分配 mcache
+	mallocinit()
+  // 初始化当前系统线程 M：通过 schedt.mnext 获得 id 及 m.gsignal 的初始化（一个栈大小为 32KB 的 G）
+	mcommoninit(_g_.m)
+  // cpu 相关初始化
+	cpuinit()       // must run before alginit
+	alginit()       // maps must not be used before this call
+  // 模块加载相关初始化
+	modulesinit()   // provides activeModules
+	typelinksinit() // uses maps, activeModules
+	itabsinit()     // uses activeModules
+
+	msigsave(_g_.m)
+	initSigmask = _g_.m.sigmask
+
+  // 处理用户参数及环境变量
+	goargs()
+	goenvs()
+  // 处理调试相关环境变量
+	parsedebugvars()
+  // 垃圾回收器初始化
+	gcinit()
+  
+  // 初始化网络轮询时间
+	sched.lastpoll = uint64(nanotime())
+  // 设置 processor 数量，处理用户 GOMAXPROCS 环境变量
+	procs := ncpu
+	if n, ok := atoi32(gogetenv(&quot;GOMAXPROCS&quot;)); ok &amp;&amp; n &gt; 0 {
+		procs = n
+	}
+  // 调整 P 的数量，初始化 P，会导致 STW，在运行时调用 runtime.GOMAXPROCS() 也是最终执行这个方法
+	if procresize(procs) != nil {
+		throw(&quot;unknown runnable goroutine during bootstrap&quot;)
+	}
+  ......
+}
+</code></pre>
+<p>我们最感兴趣的三大运行时组件在如下函数签名中进行大量初始化工作：</p>
+<ul>
+<li><code>stackinit()</code> goroutine 执行栈初始化</li>
+<li><code>mallocinit()</code> 内存分配器初始化</li>
+<li><code>mcommoninit()</code> 系统线程的部分初始化工作</li>
+<li><code>gcinit()</code> 垃圾回收器初始化</li>
+<li><code>procresize()</code> 根据 CPU 核心数，初始化系统线程的本地缓存</li>
+</ul>
+<h5 id="main-goroutine">main goroutine</h5>
+<p><code>runtime.main</code> 已经在 <code>newproc</code> 时作为一个 G 被放入 P 中，会在 <code>mstart</code> 启动 <code>schedule</code> 后被调度执行</p>
+<pre><code class="language-go">// 关于 go linkname
+//go:linkname localname [importpath.name] 简单来说通过这种机制，可以实现调用其他包不能导出的内容。
+
+//go:linkname runtime_inittask runtime..inittask
+var runtime_inittask initTask
+
+// 可以看到这里链接的是 main..inittask 变量，但我们自己写的 main 包中并没有这个变量，它是编译器生成的。
+// cmd/compile/internal/gc.fninit 函数中有实现过程
+//go:linkname main_inittask main..inittask
+var main_inittask initTask
+
+//go:linkname main_main main.main
+func main_main()
+
+func main() {
+  ......
+  // 规定栈最大限制，64 位系统最大 1GB，32 位系统最大 250 MB
+	if sys.PtrSize == 8 {
+		maxstacksize = 1000000000
+	} else {
+		maxstacksize = 250000000
+	}
+
+	// 允许新建 G 时可以启动新 M
+	mainStarted = true
+
+  // 非 wasm 程序启动系统监控(定期垃圾回收、并发任务调度)
+	if GOARCH != &quot;wasm&quot; { // no threads on wasm yet, so no sysmon
+		systemstack(func() {
+			newm(sysmon, nil)
+		})
+	}
+
+	// 将 main goroutine 锁在主 OS 线程下运行，有些程序需要
+	lockOSThread()
+
+	......
+
+  // 执行 runtime init
+	doInit(&amp;runtime_inittask) // must be before defer
+  
+  ......
+  
+  // 启动 GC
+  gcenable()
+  
+  ......
+
+  // 执行 main 包和 import 包的 init 函数
+	doInit(&amp;main_inittask)
+  
+  ......
+  
+  // 执行 main.main
+	fn := main_main // make an indirect call, as the linker doesn't know the address of the main package when laying down the runtime
+	fn()
+  
+  ......
+
+  // main 执行结束后直接退出
+	exit(0)
+	for {
+		var x *int32
+		*x = 0
+	}
+}
+</code></pre>
+<figure data-type="image" tabindex="1"><img src="https://tva1.sinaimg.cn/large/008eGmZEly1gmeznu7slnj32y70u0jwt.jpg" alt="img" loading="lazy"></figure>
+<h2 id="调度器">调度器</h2>
+<h3 id="基本结构">基本结构</h3>
+<p>M：Machine，是对于系统线程的抽象。</p>
+<p>P：Processor 的抽象，它主要是提供了 G 的本地队列，用于减少全局锁，提高性能。</p>
+<p>G：Goroutine，使用 <code>go</code> 关键字创建的执行体。本质上是需要执行的函数体的抽象，将需要执行的函数参数进行拷贝，保存了函数体的入口地址，用于执行。</p>
+<p><strong>调度器 sched</strong></p>
+<ul>
+<li>管理了能够将 G 和 M 绑定的 M 队列</li>
+<li>管理了空闲的 P 队列（链表）</li>
+<li>管理了 runnable G 全局队列</li>
+<li>管理了即将进入 runnable 状态的（dead 状态）G 的队列</li>
+<li>管理了发生阻塞的 G 的队列</li>
+<li>管理了 defer 调用池</li>
+<li>管理了 GC 和系统监控的信号</li>
+<li>管理了需要在 safe point 时执行的函数</li>
+<li>统计了（极少发生的）动态调整 P 所花的时间</li>
+</ul>
+<h3 id="初始化-schedinit">初始化 schedinit</h3>
+<p>调度器的初始化过程：M(mcommoninit)--&gt;P(procresize)--&gt;G(newproc)，它们分别负责初始化 M 资源池（allm）、P 资源池（allp）、G 的运行现场（g.sched）以及调度队列（p.runq）。</p>
+<h5 id="m-的初始化">M 的初始化</h5>
+<p>M 只有两个状态：自旋、非自旋。在调度器初始化阶段，只有一个 M，就是主 OS 线程，因此不涉及状态部分，只有对 M 的初步初始化及信号部分处理。</p>
+<h5 id="p初始化">P初始化</h5>
+<figure data-type="image" tabindex="2"><img src="https://tva1.sinaimg.cn/large/006tNbRwly1g9tnier7d9j30mx0fkdhu.jpg" alt="p-status.png" loading="lazy"></figure>
+<p>通常情况下（在程序运行时不调整 P 的个数），P 只会在四种状态下进行切换。当程序刚开始初始化时，所有的 P 都处于 <code>_Pgcstop</code> 状态，随着 P 的初始化 <code>runtime.procresize</code> ，会被置为 <code>_Pidle</code>。如果是非初始化阶段调用 <code>runtime.procresize</code> ，当前 P 状态会被置为 <code>_Prunning</code>。</p>
+<p>当 M 需要运行时，会 <code>runtime.acquirep</code> 绑定 P，状态变为 <code>_Prunning</code>。通过 <code>runtime.releasep</code> 来释放，状态变为 <code>_Pidle</code>。</p>
+<p><code>runtime.entersyscall</code> 时，P 的状态变为 <code>_Psyscall</code>，<code>runtime.exitsyscall</code> 后，状态变为 <code>_Pidel</code>。</p>
+<p>如果发生 GC，会在 <code>stopTheWorld</code> 时，状态变为 <code>_Pgcstop</code>，<code>startTheWorld</code> 后通过 <code>procresize</code> 状态会变为 <code>_Prunning</code> 或 <code>_Pidel</code>（其他 P）。</p>
+<p>在运行中调用 <code>runtime.GOMAXPROCS()</code> 后，会调整 <code>gomaxprocs</code> 的值，<code>procresize</code> 中，如果 <code>nprocs</code> 大于 <code>old</code> 则新创建 P，状态为 <code>_Pidel</code>。如果是收缩(小于原有 P 数量)，则会将多出的 P 状态改为 <code>_Pdead</code>，这是中间态，它会在下一次 <code>gomaxprocs</code> 增加时继续复用。</p>
+<p>P 初始化的主要流程都在 <code>procresize</code> 中：</p>
+<pre><code class="language-go">// 调用之前需要先 STW，并且 sched locked。
+func procresize(nprocs int32) *p {
+  // 获取当前 P 数量
+	old := gomaxprocs
+	......
+
+	// 更新统计信息，记录此次修改时间
+	now := nanotime()
+	if sched.procresizetime != 0 {
+		sched.totaltime += int64(old) * (now - sched.procresizetime)
+	}
+	sched.procresizetime = now
+
+	// 这里只有在用户调用了 runtime.GOMAXPROCS 并且参数大于原有 P 数量才会进入
+	if nprocs &gt; int32(len(allp)) {
+		// Synchronize with retake, which could be running
+		// concurrently since it doesn't run on a P.
+		lock(&amp;allpLock)
+    // P 不会被释放，始终存在 allp 的底层数组中，cap 代表 P 的最大值
+		if nprocs &lt;= int32(cap(allp)) {
+      // 如果 nprocs 仍然小于最大的 P 值，就复用一定数量的 P
+			allp = allp[:nprocs]
+		} else {
+      // 如果超过了最大值，就创建更多的 P，定义 cap 的值，为最大 P 数量
+			nallp := make([]*p, nprocs)
+			// 将原有的 P copy 复用
+			copy(nallp, allp[:cap(allp)])
+			allp = nallp
+		}
+		unlock(&amp;allpLock)
+	}
+
+	// 初始化新的 P，扩容和程序初运行时都会进入
+	for i := old; i &lt; nprocs; i++ {
+		pp := allp[i]
+    // pp 在复用 _Pdead P 时不等于 nil，所以不用新创建
+		if pp == nil {
+			pp = new(p)
+		}
+    // 初始化 pp，将 P.id 与 allp 的索引绑定，当前状态为 _Pgcstop
+		pp.init(i)
+		atomicstorep(unsafe.Pointer(&amp;allp[i]), unsafe.Pointer(pp))
+	}
+
+	_g_ := getg()
+	if _g_.m.p != 0 &amp;&amp; _g_.m.p.ptr().id &lt; nprocs {
+  	// 如果当前 P 不在收缩范围内，则将当前 P 状态置为 _Prunning
+		_g_.m.p.ptr().status = _Prunning
+		_g_.m.p.ptr().mcache.prepareForSweep()
+	} else {
+		// 如果当前 P 在收缩范围中，则解除与当前 M 的绑定，换为与 allp[0] 绑定
+		if _g_.m.p != 0 {
+			if trace.enabled {
+				traceGoSched()
+				traceProcStop(_g_.m.p.ptr())
+			}
+			_g_.m.p.ptr().m = 0
+		}
+		_g_.m.p = 0
+		_g_.m.mcache = nil
+		p := allp[0]
+		p.m = 0
+		p.status = _Pidle
+		acquirep(p)
+		if trace.enabled {
+			traceGoStart()
+		}
+	}
+
+	// 释放掉多余 P 的相关资源，但保留 P 本身，将状态置为 _Pdead 等待复用
+	for i := nprocs; i &lt; old; i++ {
+		p := allp[i]
+		p.destroy()
+		// can't free P itself because it can be referenced by an M in syscall
+	}
+
+	// 修剪 allp，保留 cap 与底层数组
+	if int32(len(allp)) != nprocs {
+		lock(&amp;allpLock)
+		allp = allp[:nprocs]
+		unlock(&amp;allpLock)
+	}
+  
+	var runnablePs *p
+	for i := nprocs - 1; i &gt;= 0; i-- {
+		p := allp[i]
+    // 当前 P 已经处理
+		if _g_.m.p.ptr() == p {
+			continue
+		}
+		p.status = _Pidle
+		if runqempty(p) {
+      // 将没有本地任务的 P 放入 idel 链表
+			pidleput(p)
+		} else {
+      // 有本地任务的 P，为其绑定一个 M
+			p.m.set(mget())
+			p.link.set(runnablePs)
+      // 放入当前链表
+			runnablePs = p
+		}
+	}
+	stealOrder.reset(uint32(nprocs))
+  // 将 gomaxprocs 值设置为 nprocs
+	var int32p *int32 = &amp;gomaxprocs // make compiler check that gomaxprocs is an int32
+	atomic.Store((*uint32)(unsafe.Pointer(int32p)), uint32(nprocs))
+  // 返回由本地任务的 P 链表
+	return runnablePs
+}
+</code></pre>
+<h5 id="g-初始化">G 初始化</h5>
+<p>运行完 <code>runtime.procresize</code> 之后，就是使用 <code>runtime.newproc</code> 来完成 <code>main goroutine</code> 的初始化，并且放入调度器中运行。</p>
+<figure data-type="image" tabindex="3"><img src="https://tva1.sinaimg.cn/large/006tNbRwly1g9srqlmo9qj30u90j90uz.jpg" alt="g-status.png" loading="lazy"></figure>
+<pre><code class="language-go">// CALL	runtime·newproc(SB)
+// 上面汇编代码中将 main goroutine 作为 fn 传入了 newproc
+func newproc(siz int32, fn *funcval) {
+  // 得到参数的内存地址
+	argp := add(unsafe.Pointer(&amp;fn), sys.PtrSize)
+	gp := getg()
+	pc := getcallerpc()
+	systemstack(func() {
+		newproc1(fn, (*uint8)(argp), siz, gp, pc)
+	})
+}
+</code></pre>
+<pre><code class="language-go">// 创建一个运行 fn 的 G，具有 narg 字节大小的参数，从 argp 开始。
+// callerps 是 go 语句的起始地址，也就是 G 的调用地址，新创建的 G 会被放入 G 的队列红等待运行。
+func newproc1(fn *funcval, argp *uint8, narg int32, callergp *g, callerpc uintptr) {
+  // 获得当前 G，初始化时是 g0
+	_g_ := getg()
+
+	......
+  
+  // 禁止当前 m 被抢占
+	acquirem() // disable preemption because it can be holding p in a local var
+	siz := narg
+	siz = (siz + 7) &amp;^ 7
+  // 参数不应该超过 G 的初始栈大小：2KB
+	if siz &gt;= _StackMin-4*sys.RegSize-sys.RegSize {
+		throw(&quot;newproc: function arguments too large for new goroutine&quot;)
+	}
+
+	......
+
+  // 得到当前 P
+	_p_ := _g_.m.p.ptr()
+  // 尝试得到一个可用的 G(G 状态为 _Gdead 时可复用)，会先寻找当前 P 的 gFree 链表，如果没有去全局的 gFree 链表获取。
+	newg := gfget(_p_)
+  // 初始化时找不到，运行时可能已被耗尽
+	if newg == nil {
+    // 创建一个最小栈的 G，当前版本：_StackMin = 2048 2KB
+		newg = malg(_StackMin)
+    // 将新 G 状态由 _Gidle 置为 _Gdead
+		casgstatus(newg, _Gidle, _Gdead)
+    // allg 是存放运行时所有的 G 的列表，此时将 _Gdead 状态的 G 添加至 allg ，是防止 GC 扫描打扫未初始化的栈
+		allgadd(newg)
+	}
+	
+  ......
+
+  // 计算运行空间大小，对齐
+	totalSize := 4*sys.RegSize + uintptr(siz) + sys.MinFrameSize
+	totalSize += -totalSize &amp; (sys.SpAlign - 1)
+  // 确定 sp 和参数入栈位置
+	sp := newg.stack.hi - totalSize
+	spArg := sp
+  
+  ......
+  
+  // 处理 G 的参数，当有参数时，需要将参数拷贝到 G 的执行栈中
+	if narg &gt; 0 {
+		// 从 argp 参数开始的位置，复制 narg 个字节到 spArg
+    memmove(unsafe.Pointer(spArg), unsafe.Pointer(argp), uintptr(narg))
+		// 栈到栈的拷贝，涉及到写屏障，学完 GC 回来再看
+		if writeBarrier.needed &amp;&amp; !_g_.m.curg.gcscandone {
+			f := findfunc(fn.fn)
+			stkmap := (*stackmap)(funcdata(f, _FUNCDATA_ArgsPointerMaps))
+			if stkmap.nbit &gt; 0 {
+				// We're in the prologue, so it's always stack map index 0.
+				bv := stackmapdata(stkmap, 0)
+				bulkBarrierBitmap(spArg, spArg, uintptr(bv.n)*sys.PtrSize, 0, bv.bytedata)
+			}
+		}
+	}
+
+  // 清理并初始化 G 的运行现场，因为有可能得到复用的 G
+  // g.sched 是 gobuf 结构，用于保存上下文
+	memclrNoHeapPointers(unsafe.Pointer(&amp;newg.sched), unsafe.Sizeof(newg.sched))
+	newg.sched.sp = sp
+	newg.stktopsp = sp
+	newg.sched.pc = funcPC(goexit) + sys.PCQuantum // +PCQuantum so that previous instruction is in same function
+	newg.sched.g = guintptr(unsafe.Pointer(newg))
+  // 看起来像是在这里运行了 fn，其实没有，需要等到调度器执行，后面有详细理解
+	gostartcallfn(&amp;newg.sched, fn)
+  // 初始化 G 的基本状态
+	newg.gopc = callerpc
+	newg.ancestors = saveAncestors(callergp)
+	newg.startpc = fn.fn
+  
+	.....
+  
+  // GC 运行周期，初始化时为 false，不可以被扫。如果 G 自上次扫描后未运行，则为 true，也就是标记可以被 GC 扫描
+	newg.gcscanvalid = false
+  // 将 G 的状态从 _Gdead 置为 _Grunable
+	casgstatus(newg, _Gdead, _Grunnable)
+
+  // P 维护了一个 G id 缓存列表，每次都会获取 _GoidCacheBatch(当前版本16) 个 id，放入自身的列表，性能优化吧。这里是判断是否用完了，用完了就再取一批。
+	if _p_.goidcache == _p_.goidcacheend {
+		// Sched.goidgen is the last allocated id,
+		// this batch must be [sched.goidgen+1, sched.goidgen+GoidCacheBatch].
+		// At startup sched.goidgen=0, so main goroutine receives goid=1.
+		_p_.goidcache = atomic.Xadd64(&amp;sched.goidgen, _GoidCacheBatch)
+		_p_.goidcache -= _GoidCacheBatch - 1
+		_p_.goidcacheend = _p_.goidcache + _GoidCacheBatch
+	}
+  // 设置 id，增加 id 缓存信息
+	newg.goid = int64(_p_.goidcache)
+	_p_.goidcache++
+  
+  ......
+  
+  // 将创建好的 G 放入 P 中，先放本地，满了进全局。
+  // true 表示放入执行队列的下一个，false 表示放入队尾
+	runqput(_p_, newg, true)
+
+  // 如果有空闲的 P，并且没有自旋中的 M，则直接唤醒 P
+  // 初始化时 mainStarted 为 fasle，所以不可以
+  // 什么情况会有空闲 P，但没有自旋中的 M？
+	if atomic.Load(&amp;sched.npidle) != 0 &amp;&amp; atomic.Load(&amp;sched.nmspinning) == 0 &amp;&amp; mainStarted {
+		wakep()
+	}
+	releasem(_g_.m)
+}
+</code></pre>
+<p>关于 <code>gostartcallfn</code>：</p>
+<pre><code class="language-go">// 获取了传入 fv 的入口地址
+func gostartcallfn(gobuf *gobuf, fv *funcval) {
+	var fn unsafe.Pointer
+	if fv != nil {
+		fn = unsafe.Pointer(fv.fn)
+	} else {
+		fn = unsafe.Pointer(funcPC(nilfunc))
+	}
+	gostartcall(gobuf, fn, unsafe.Pointer(fv))
+}
+// 将 fn 与 fv 保存至 g.sched buf 中
+func gostartcall(buf *gobuf, fn, ctxt unsafe.Pointer) {
+	sp := buf.sp
+	if sys.RegSize &gt; sys.PtrSize {
+		sp -= sys.PtrSize
+		*(*uintptr)(unsafe.Pointer(sp)) = 0
+	}
+	sp -= sys.PtrSize
+	*(*uintptr)(unsafe.Pointer(sp)) = buf.pc
+	buf.sp = sp
+	buf.pc = uintptr(fn)
+	buf.ctxt = ctxt
+}
+</code></pre>
+<p>关于 <code>runqput</code>：</p>
+<pre><code class="language-go">func runqput(_p_ *p, gp *g, next bool) {
+	......
+
+  // 插入下一个
+	if next {
+	retryNext:
+		oldnext := _p_.runnext
+    // 通过原子操作将 _p_.runnext 的值替换为 gp
+		if !_p_.runnext.cas(oldnext, guintptr(unsafe.Pointer(gp))) {
+			goto retryNext
+		}
+    // 如果原本就没有 oldnext，直接就返回了
+		if oldnext == 0 {
+			return
+		}
+		// 将原有的 next G 作为新的 G，继续添加
+		gp = oldnext.ptr()
+	}
+
+retry:
+	h := atomic.LoadAcq(&amp;_p_.runqhead) // load-acquire, synchronize with consumers
+	t := _p_.runqtail
+  // 本地队列未满则入队
+	if t-h &lt; uint32(len(_p_.runq)) {
+		_p_.runq[t%uint32(len(_p_.runq))].set(gp)
+		atomic.StoreRel(&amp;_p_.runqtail, t+1) // store-release, makes the item available for consumption
+		return
+	}
+  // 满了则放进全局队列，还会带走一半的本地队列，性能优化吧
+	if runqputslow(_p_, gp, h, t) {
+		return
+	}
+	// the queue is not full, now the put above must succeed
+	goto retry
+}
+</code></pre>
+<h3 id="调度循环">调度循环</h3>
+<h4 id="启动前">启动前</h4>
+<p>在启动调度器以前，需要确定 G 的栈边界，也就是栈高位指针和低位指针。</p>
+<pre><code class="language-go">func mstart() {
+  // 在初始化时获取到的是 g0，也就是系统栈，每个 M 都有一个系统栈。系统栈主要用于 runtime 的程序逻辑。系统栈大小固定，是程序设计时算好的。
+	_g_ := getg()
+
+  // 验证当前 g0 栈是否已初始化，不同系统的处理方式不一致。
+  // m0 的 g0 已经在汇编中初始化，所以不用进入。而后创建的 M，如果属于操作系统分配的栈，则需要在这里确定栈边界
+	osStack := _g_.stack.lo == 0
+	if osStack {
+		size := _g_.stack.hi
+		if size == 0 {
+			size = 8192 * sys.StackGuardMultiplier
+		}
+		_g_.stack.hi = uintptr(noescape(unsafe.Pointer(&amp;size)))
+    // 为什么要扣除 1KB 的空间？
+		_g_.stack.lo = _g_.stack.hi - size + 1024
+	}
+  // 初始化栈 guard，用于栈溢出检测
+  // 进而可以同时调用 Go 或 C 函数
+	_g_.stackguard0 = _g_.stack.lo + _StackGuard
+	_g_.stackguard1 = _g_.stackguard0
+  // 启动 M
+	mstart1()
+
+	// 这里应该就是处理 m0.g0 属于操作系统分配栈的逻辑
+	if GOOS == &quot;windows&quot; || GOOS == &quot;solaris&quot; || GOOS == &quot;illumos&quot; || GOOS == &quot;plan9&quot; || GOOS == &quot;darwin&quot; || GOOS == &quot;aix&quot; {
+    // 由于 windows, solaris, darwin, aix 和 plan9 总是系统分配的栈，在 mstart 之前放进 _g_.stack 的
+		// 因此上面的逻辑还没有设置 osStack。
+		osStack = true
+	}
+	mexit(osStack)
+}
+</code></pre>
+<p>启动调度器</p>
+<pre><code class="language-go">func mstart1() {
+	_g_ := getg()
+  ......
+  // 为了在 mcall 的栈顶使用调用方来结束当前线程，做记录
+	// 当进入 schedule 之后，我们再也不会回到 mstart1，所以其他调用可以复用当前帧。
+	save(getcallerpc(), getcallersp())
+	asminit()
+	minit()
+  
+  // 设置信号 handler；在 minit 之后，因为 minit 可以准备处理信号的的线程
+	if _g_.m == &amp;m0 {
+		mstartm0()
+	}
+
+  // M 的启动函数，m0 没有 fn
+	if fn := _g_.m.mstartfn; fn != nil {
+		fn()
+	}
+
+  // 如果当前 M 不是 m0，需要绑定 P
+	if _g_.m != &amp;m0 {
+		acquirep(_g_.m.nextp.ptr())
+		_g_.m.nextp = 0
+	}
+  // m 开始进入调度，永不返回
+	schedule()
+}
+</code></pre>
+<p><strong>M 与 P 的绑定</strong></p>
+<p>很简单，就是将 m.p 绑定 P 的指针，p.m 绑定 M 的指针，绑定前 P 的状态要求是 <code>_Pidel</code>，绑定后变为 <code>_Prunning</code>。</p>
+<p><strong>schedule 永不返回</strong></p>
+<p>调度循环 <code>schedule</code> 无法返回，因此最后一个 <code>mexit</code> 目前还不会被执行，因此当下所有的 Go 程序创建的线程都无法被释放 （只有一个特例，当使用 <code>runtime.LockOSThread</code> 锁住的 G 退出时会使用 <code>gogo</code> 退出 M）。</p>
+<h4 id="调度逻辑">调度逻辑</h4>
+<p><code>schedule</code> 开始就正式进行调度，下面是核心调度逻辑：</p>
+<pre><code class="language-go">func schedule() {
+  // g0
+	_g_ := getg()
+  ......
+
+  // m.lockedg 会在 runtime.LockOSThread 下变为非零
+	if _g_.m.lockedg != 0 {
+		stoplockedm()
+		execute(_g_.m.lockedg.ptr(), false) // Never returns.
+	}
+  ......
+
+top:
+	if sched.gcwaiting != 0 {
+		gcstopm()
+		goto top
+	}
+	if _g_.m.p.ptr().runSafePointFn != 0 {
+		runSafePointFn()
+	}
+
+	var gp *g
+	var inheritTime bool
+
+	......
+  
+  // 如果正在 GC，去找 GC 中的 G
+	if gp == nil &amp;&amp; gcBlackenEnabled != 0 {
+		gp = gcController.findRunnableGCWorker(_g_.m.p.ptr())
+		tryWakeP = tryWakeP || gp != nil
+	}
+	// 每隔 61 次优先取全局队列的 G，防止饿死
+	if gp == nil {
+		if _g_.m.p.ptr().schedtick%61 == 0 &amp;&amp; sched.runqsize &gt; 0 {
+			lock(&amp;sched.lock)
+			gp = globrunqget(_g_.m.p.ptr(), 1)
+			unlock(&amp;sched.lock)
+		}
+	}
+  // 尝试获取 G，用于验证 M 是否处于自旋状态但取不到 G
+	if gp == nil {
+		gp, inheritTime = runqget(_g_.m.p.ptr())
+		if gp != nil &amp;&amp; _g_.m.spinning {
+			throw(&quot;schedule: spinning with local work&quot;)
+		}
+	}
+  // 在此 M 进入自旋，持续寻找可用 G，并阻塞
+	if gp == nil {
+		gp, inheritTime = findrunnable()
+	}
+
+	// 这时一定取到 G 了
+	if _g_.m.spinning {
+    // 将会把 M 标记为非自旋状态，如果标记后，没有自旋状态中的 M，并且还有 Pidel 链表中还有空闲的 P，需要新启动一个 M。M 有可能死亡
+		resetspinning()
+	}
+
+	......
+
+	execute(gp, inheritTime)
+}
+</code></pre>
+<p><strong>G 的运行</strong></p>
+<pre><code class="language-go">func execute(gp *g, inheritTime bool) {
+	_g_ := getg()
+
+  // 将 G 切换为 _Grunning 状态
+	casgstatus(gp, _Grunnable, _Grunning)
+	gp.waitsince = 0
+  // 抢占信号 信号在后面了解
+	gp.preempt = false
+	gp.stackguard0 = gp.stack.lo + _StackGuard
+	if !inheritTime {
+		_g_.m.p.ptr().schedtick++
+	}
+  // 绑定至当前 M
+	_g_.m.curg = gp
+	gp.m = _g_.m
+
+	......
+
+  // 开始执行 G 中的函数
+	gogo(&amp;gp.sched)
+}
+</code></pre>
+<p><code>gogo</code> 的实现</p>
+<pre><code class="language-asm">TEXT runtime·gogo(SB), NOSPLIT, $16-8
+	MOVQ	buf+0(FP), BX		// 运行现场
+	MOVQ	gobuf_g(BX), DX
+	MOVQ	0(DX), CX		// 确认 g != nil
+	get_tls(CX)
+	MOVQ	DX, g(CX)
+	MOVQ	gobuf_sp(BX), SP	// 恢复 SP
+	MOVQ	gobuf_ret(BX), AX
+	MOVQ	gobuf_ctxt(BX), DX
+	MOVQ	gobuf_bp(BX), BP
+	MOVQ	$0, gobuf_sp(BX)	// 清理，辅助 GC
+	MOVQ	$0, gobuf_ret(BX)
+	MOVQ	$0, gobuf_ctxt(BX)
+	MOVQ	$0, gobuf_bp(BX)
+	MOVQ	gobuf_pc(BX), BX // 获取 G 要执行的函数的入口地址
+	JMP	BX // 开始执行
+</code></pre>
+<p>在这里看似是 <code>JMP BX</code> 后就结束执行了，没有后续操作。但其实在前面有对其 <code>PC</code> 进行巧妙的处理。</p>
+<pre><code class="language-go">func newproc1(fn *funcval, argp *uint8, narg int32, callergp *g, callerpc uintptr) {
+  ......
+	siz := narg
+	siz = (siz + 7) &amp;^ 7
+  ......
+  	totalSize := 4*sys.RegSize + uintptr(siz) + sys.MinFrameSize // extra space in case of reads slightly beyond frame
+	totalSize += -totalSize &amp; (sys.SpAlign - 1)                  // align to spAlign
+	sp := newg.stack.hi - totalSize
+	spArg := sp
+  ......
+  memclrNoHeapPointers(unsafe.Pointer(&amp;newg.sched), unsafe.Sizeof(newg.sched))
+	newg.sched.sp = sp
+	newg.stktopsp = sp
+  // 将 goexit 作为 PC 存入 gobuf
+	newg.sched.pc = funcPC(goexit) + sys.PCQuantum // +PCQuantum so that previous instruction is in same function
+	newg.sched.g = guintptr(unsafe.Pointer(newg))
+  // 在这里对 gobuf 进行处理
+	gostartcallfn(&amp;newg.sched, fn)
+  ......
+}
+</code></pre>
+<p>看下 <code>gostartcallfn</code> 的处理：</p>
+<pre><code class="language-go">func gostartcallfn(gobuf *gobuf, fv *funcval) {
+	var fn unsafe.Pointer
+	if fv != nil {
+		fn = unsafe.Pointer(fv.fn)
+	} else {
+		fn = unsafe.Pointer(funcPC(nilfunc))
+	}
+	gostartcall(gobuf, fn, unsafe.Pointer(fv))
+}
+// x86
+func gostartcall(buf *gobuf, fn, ctxt unsafe.Pointer) {
+  // 原 sp
+	sp := buf.sp
+	if sys.RegSize &gt; sys.PtrSize {
+		sp -= sys.PtrSize
+		*(*uintptr)(unsafe.Pointer(sp)) = 0
+	}
+  // sp 地址下移以适应新的布局
+	sp -= sys.PtrSize
+	*(*uintptr)(unsafe.Pointer(sp)) = buf.pc
+	buf.sp = sp
+  // 还原 pc 为 fn，也就是原函数地址
+	buf.pc = uintptr(fn)
+	buf.ctxt = ctxt
+}
+</code></pre>
+<p>在不同架构下的 <code>gostartcall</code> 的处理也不一样，这里是 x86 架构下的处理。但是想要的效果都是一样的，也就是拆解 <code>CALL</code> 指令，先手动将 <code>goexit</code> 压入栈，然后 <code>JMP</code> 至 fn，等待 fn 运行完成，执行 <code>RET</code> 指令时，自然会将 <code>goexit</code> 出栈，放入 <code>PC</code> 寄存器。</p>
+<p>这也是上面的 <code>gogo</code> 为什么没有使用 <code>CALL</code> 而是使用了 <code>JMP</code>，使用 <code>CALL</code> 命令 cpu 会将 <code>PC(下一条指令)</code> 压入栈中，并 <code>JMP</code>。而直接 <code>JMP</code>，等待 <code>ret</code> 时就会将 <code>goexit</code> 恢复到 <code>PC</code>，从而达到执行 <code>goexit</code> 的目的。</p>
+<p>接下来就是去执行 <code>goexit</code> 了：</p>
+<pre><code class="language-asm">// The top-most function running on a goroutine
+// returns to goexit+PCQuantum.
+TEXT runtime·goexit(SB),NOSPLIT,$0-0
+	BYTE	$0x90	// NOP
+	CALL	runtime·goexit1(SB)	// does not return
+	// traceback from goexit1 must hit code range of goexit
+	BYTE	$0x90	// NOP
+</code></pre>
+<p>接下来是 <code>goexit1</code>：</p>
+<pre><code class="language-go">func goexit1() {
+	......
+  // 通过 mcall 调用 goexit0
+	mcall(goexit0)
+}
+</code></pre>
+<p><code>mcall</code> 主要是更改执行栈为 <code>m.g0</code> 在系统栈中执行调用，接下来看 <code>goexit0</code>：</p>
+<pre><code class="language-go">func goexit0(gp *g) {
+  // 此时已经是 g0
+	_g_ := getg()
+
+  // 将 G 状态变为 _Gdead
+	casgstatus(gp, _Grunning, _Gdead)
+	if isSystemGoroutine(gp, false) {
+		atomic.Xadd(&amp;sched.ngsys, -1)
+	}
+  
+  // 清理
+	gp.m = nil
+	locked := gp.lockedm != 0
+	gp.lockedm = 0
+	_g_.m.lockedg = 0
+	gp.paniconfault = false
+	gp._defer = nil // 应该已经为 true，但是以防万一
+	gp._panic = nil // non-nil for Goexit during panic. points at stack-allocated data.
+	gp.writebuf = nil
+	gp.waitreason = 0
+	gp.param = nil
+	gp.labels = nil
+	gp.timer = nil
+
+	if gcBlackenEnabled != 0 &amp;&amp; gp.gcAssistBytes &gt; 0 {
+		// Flush assist credit to the global pool. This gives
+		// better information to pacing if the application is
+		// rapidly creating an exiting goroutines.
+		scanCredit := int64(gcController.assistWorkPerByte * float64(gp.gcAssistBytes))
+		atomic.Xaddint64(&amp;gcController.bgScanCredit, scanCredit)
+		gp.gcAssistBytes = 0
+	}
+
+	// 现在可以对 G 进行栈扫描，因为它已经没有栈了
+	gp.gcscanvalid = true
+	dropg()
+
+	if GOARCH == &quot;wasm&quot; { // wasm 目前还没有线程
+    // 将 G 放入 gfree 链表中等待复用
+		gfput(_g_.m.p.ptr(), gp)
+		schedule() // 再次进行调度
+	}
+
+  ......
+  
+  // 将 G 放入 gfree 链表中等待复用
+	gfput(_g_.m.p.ptr(), gp)
+	if locked {
+		// 这个 G 有可能在当前线程上锁住，这个时候需要 kill 线程，而不是将 M 放回线程池
+    // 这个操作会返回 mstart，从而释放当前 P 并退出该线程
+		if GOOS != &quot;plan9&quot; { // See golang.org/issue/22227.
+      // 回到 M 的运行现场，在 mstart1 中有保存 M 的运行现场(g0.sched)，这里将会回到 mstart 中继续执行 mexit
+			gogo(&amp;_g_.m.g0.sched)
+		} else {
+			// Clear lockedExt on plan9 since we may end up re-using
+			// this thread.
+			_g_.m.lockedExt = 0
+		}
+	}
+  // 再次调度
+	schedule()
+}
+</code></pre>
+<p><strong>如何寻找 G</strong></p>
+<p>回头看看调度逻辑中如何找到可运行的 G：</p>
+<pre><code class="language-go">func findrunnable() (gp *g, inheritTime bool) {
+	_g_ := getg()
+  
+top:
+	_p_ := _g_.m.p.ptr()
+  // 如果在 GC，则暂停，直到复始后重新开始
+	if sched.gcwaiting != 0 {
+		gcstopm()
+		goto top
+	}
+  ......
+
+	// 首先从 P 本地队列中寻找
+	if gp, inheritTime := runqget(_p_); gp != nil {
+		return gp, inheritTime
+	}
+
+	// 找不到则去全局队列中寻找
+	if sched.runqsize != 0 {
+		lock(&amp;sched.lock)
+		gp := globrunqget(_p_, 0)
+		unlock(&amp;sched.lock)
+		if gp != nil {
+			return gp, false
+		}
+	}
+
+	// Poll 网络，优先级比从其他 P 中偷取高
+	if netpollinited() &amp;&amp; atomic.Load(&amp;netpollWaiters) &gt; 0 &amp;&amp; atomic.Load64(&amp;sched.lastpoll) != 0 {
+		if list := netpoll(false); !list.empty() { // non-blocking
+			gp := list.pop()
+			injectglist(&amp;list)
+			casgstatus(gp, _Gwaiting, _Grunnable)
+			if trace.enabled {
+				traceGoUnpark(gp, 0)
+			}
+			return gp, false
+		}
+	}
+
+	// 准备从其他 P 中偷取
+	procs := uint32(gomaxprocs)
+	if atomic.Load(&amp;sched.npidle) == procs-1 {
+		// 如果没有可偷取的就不偷了
+		goto stop
+	}
+	// 如果自旋中的 M 数量大于正在运行中 P 的数量，则直接阻塞
+	if !_g_.m.spinning &amp;&amp; 2*atomic.Load(&amp;sched.nmspinning) &gt;= procs-atomic.Load(&amp;sched.npidle) {
+		goto stop
+	}
+  // M 进入自旋状态
+	if !_g_.m.spinning {
+		_g_.m.spinning = true
+		atomic.Xadd(&amp;sched.nmspinning, 1)
+	}
+	for i := 0; i &lt; 4; i++ {
+    // 随机偷取
+		for enum := stealOrder.start(fastrand()); !enum.done(); enum.next() {
+      // 再次检查 GC，如果进入 GC，回到顶部，暂停 M
+			if sched.gcwaiting != 0 {
+				goto top
+			}
+			stealRunNextG := i &gt; 2 // 如果偷了两次都偷不到，则优先查找 ready 队列
+			if gp := runqsteal(_p_, allp[enum.position()], stealRunNextG); gp != nil {
+				return gp, false
+			}
+		}
+	}
+
+stop:
+
+	......
+
+	// 放弃当前 P 之前，对 allp 做一个快照
+  // 一旦我们不再阻塞在 safe-point 时候，可以立刻在下面进行修改
+	allpSnapshot := allp
+
+	// 准备归还 P，调度器加锁
+	lock(&amp;sched.lock)
+  // 再次检查 GC......
+	if sched.gcwaiting != 0 || _p_.runSafePointFn != 0 {
+		unlock(&amp;sched.lock)
+		goto top
+	}
+  // 再次检查全局队列
+	if sched.runqsize != 0 {
+		gp := globrunqget(_p_, 0)
+		unlock(&amp;sched.lock)
+		return gp, false
+	}
+  // 归还 P
+	if releasep() != _p_ {
+		throw(&quot;findrunnable: wrong p&quot;)
+	}
+  // 将 P 放入 Pidel 链表
+	pidleput(_p_)
+  // 解锁调度器
+	unlock(&amp;sched.lock)
+
+	// Delicate dance: thread transitions from spinning to non-spinning state,
+	// potentially concurrently with submission of new goroutines. We must
+	// drop nmspinning first and then check all per-P queues again (with
+	// #StoreLoad memory barrier in between). If we do it the other way around,
+	// another thread can submit a goroutine after we've checked all run queues
+	// but before we drop nmspinning; as the result nobody will unpark a thread
+	// to run the goroutine.
+	// If we discover new work below, we need to restore m.spinning as a signal
+	// for resetspinning to unpark a new worker thread (because there can be more
+	// than one starving goroutine). However, if after discovering new work
+	// we also observe no idle Ps, it is OK to just park the current thread:
+	// the system is fully loaded so no spinning threads are required.
+	// Also see &quot;Worker thread parking/unparking&quot; comment at the top of the file.
+	wasSpinning := _g_.m.spinning
+	if _g_.m.spinning {
+		_g_.m.spinning = false
+		if int32(atomic.Xadd(&amp;sched.nmspinning, -1)) &lt; 0 {
+			throw(&quot;findrunnable: negative nmspinning&quot;)
+		}
+	}
+
+	// 再次检查所有 P 的本地队列
+	for _, _p_ := range allpSnapshot {
+		if !runqempty(_p_) {
+			lock(&amp;sched.lock)
+			_p_ = pidleget()
+			unlock(&amp;sched.lock)
+			if _p_ != nil {
+				acquirep(_p_)
+				if wasSpinning {
+					_g_.m.spinning = true
+					atomic.Xadd(&amp;sched.nmspinning, 1)
+				}
+				goto top
+			}
+			break
+		}
+	}
+
+	// 再次检查 idel GC work
+	if gcBlackenEnabled != 0 &amp;&amp; gcMarkWorkAvailable(nil) {
+		lock(&amp;sched.lock)
+		_p_ = pidleget()
+		if _p_ != nil &amp;&amp; _p_.gcBgMarkWorker == 0 {
+			pidleput(_p_)
+			_p_ = nil
+		}
+		unlock(&amp;sched.lock)
+		if _p_ != nil {
+			acquirep(_p_)
+			if wasSpinning {
+				_g_.m.spinning = true
+				atomic.Xadd(&amp;sched.nmspinning, 1)
+			}
+			// Go back to idle GC check.
+			goto stop
+		}
+	}
+
+	// 再次检查 poll 网络
+	if netpollinited() &amp;&amp; atomic.Load(&amp;netpollWaiters) &gt; 0 &amp;&amp; atomic.Xchg64(&amp;sched.lastpoll, 0) != 0 {
+		if _g_.m.p != 0 {
+			throw(&quot;findrunnable: netpoll with p&quot;)
+		}
+		if _g_.m.spinning {
+			throw(&quot;findrunnable: netpoll with spinning&quot;)
+		}
+		list := netpoll(true) // block until new work is available
+		atomic.Store64(&amp;sched.lastpoll, uint64(nanotime()))
+		if !list.empty() {
+			lock(&amp;sched.lock)
+			_p_ = pidleget()
+			unlock(&amp;sched.lock)
+			if _p_ != nil {
+				acquirep(_p_)
+				gp := list.pop()
+				injectglist(&amp;list)
+				casgstatus(gp, _Gwaiting, _Grunnable)
+				if trace.enabled {
+					traceGoUnpark(gp, 0)
+				}
+				return gp, false
+			}
+			injectglist(&amp;list)
+		}
+	}
+  // 真的找不到了，暂止当前 M
+	stopm()
+	goto top
+}
+</code></pre>
+<p>总结查找 G 顺序：本地 &gt; 全局 &gt; poll 网络 &gt; 偷。</p>
+<p>如何偷取 G：</p>
+<pre><code class="language-go">// 从 p2 的本地队列中窃取一半的元素，并放入 p 的本地队列中
+func runqsteal(_p_, p2 *p, stealRunNextG bool) *g {
+	t := _p_.runqtail
+	n := runqgrab(p2, &amp;_p_.runq, t, stealRunNextG)
+	if n == 0 {
+		return nil
+	}
+	n--
+	gp := _p_.runq[(t+n)%uint32(len(_p_.runq))].ptr()
+	if n == 0 {
+		return gp
+	}
+	h := atomic.LoadAcq(&amp;_p_.runqhead) // load-acquire, synchronize with consumers
+	if t-h+n &gt;= uint32(len(_p_.runq)) {
+		throw(&quot;runqsteal: runq overflow&quot;)
+	}
+	atomic.StoreRel(&amp;_p_.runqtail, t+n) // store-release, makes the item available for consumption
+	return gp
+}
+</code></pre>
+<p><strong>M 的自旋</strong></p>
+<p>M 的自旋状态就是不断执行 schedule 的过程。</p>
+<p>M 会在有 G 可用时，尽量保证有正在运行中 P 数量的自旋 M，而当没有 G 可用时，M 会陷入阻塞，等待唤醒。这样尽量保证在有 G 可用时不需要多次重复唤醒 M，也避免了无 G 可用时的查找 G 的 cpu 浪费。</p>
 ]]></content>
     </entry>
     <entry>
@@ -2999,332 +4785,6 @@ func (p *nfsProvisioner) validateOptions(options controller.ProvisionOptions) (s
 <p><a href="https://vuejsdevelopers.com/">Vue.js developers</a> vuejsdevelopers.com</p>
 <h2 id="参考文章">参考文章</h2>
 <p><a href="https://www.infoq.cn/article/9XymmTqu*4QwahqikMka">《2019 年 Vue 学习路线图》</a></p>
-]]></content>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[Go 的并发性与调度器]]></title>
-        <id>https://cnbailian.github.io/post/concurrency-and-scheduler-of-go/</id>
-        <link href="https://cnbailian.github.io/post/concurrency-and-scheduler-of-go/">
-        </link>
-        <updated>2019-03-06T11:00:00.000Z</updated>
-        <summary type="html"><![CDATA[<p>本篇文章是我对 Go 语言并发性的理解总结，适合初步了解并发，对 Go 语言的并发编程与调度器原理有兴趣的读者。</p>
-]]></summary>
-        <content type="html"><![CDATA[<p>本篇文章是我对 Go 语言并发性的理解总结，适合初步了解并发，对 Go 语言的并发编程与调度器原理有兴趣的读者。</p>
-<!--more-->  
-<h3 id="你真的了解并发吗">你真的了解并发吗？</h3>
-<p>相信读者都对并发有着一定的理解，也都对 Go 语言感兴趣，Go 最吸引人的地方可能就是它的内建并发支持，使用 <code>go</code> 关键字，就可以轻松的实现并发。但是，你真正的了解<strong>并发</strong>吗？</p>
-<p>并发这个词，你去问编程领域中不同的人，会给出不同的答案。对于 WEB 领域的开发人员来说，并发通常是指<strong>同一时刻的请求量</strong>，WEB 领域的面试官经常会问到的问题：“做过多少并发的项目？”或“接触过高并发的项目吗？”就是应用的这个概念。<em>高并发在这里还有个可能的概念是：<strong>同时应对许多请求所使用的技术</strong>，这通常与分布式、并行等概念挂钩，需要结合上下文语境来判断。</em></p>
-<p>并发是一个有趣的词，因为它对编程领域中的不同人员意味着不同的事情，在广义概念下，有着许多狭义概念。除了“并发”之外，你可能还听过“并行”、“多线程”、“异步”等词汇，有些人认为这些词意思相同，而其他人则在每个词之间划清界限。</p>
-<p>下面，让我们看看 Go 语言编程中，“并发”这个词的概念。</p>
-<h3 id="go-语言中的并发性">Go 语言中的并发性</h3>
-<p>Go 语言的并发性并不是 WEB 领域的并发概念，很多人对此有所混淆。在 Go 语言发布之初，大家对 Go 的并发特性都有所疑问：</p>
-<ul>
-<li>为什么要有并发？</li>
-<li>什么是并发？</li>
-<li>这个想法源自哪里？</li>
-<li>并发有什么好处？</li>
-<li>我该如何使用它？</li>
-</ul>
-<p>面对这些问题，Rob Pike（Go 语言作者之一）在2012年的 Google I/O 上做了一次精彩的演讲：<a href="https://www.youtube.com/watch?v=f6kdp27TYZs">《Go Concurrency Patterns》</a>，在这场演讲中，他回答了上述问题，并通过详细的示例讲解了 goroutine、channel 与 select 的使用，建议大家都去看一看这场演讲。</p>
-<p>简单的总结一下并发在 Go 语言编程中的概念：</p>
-<p><strong>“并发是一种将程序分解成小片段独立执行的程度设计方法”，它是一种结构化程序的方式，独立执行计算的组合。</strong></p>
-<p>在上述的演讲中可以看出，Go 语言推荐使用并发，我们也应该遵循这种编程方式。对于程序员来说，代码更有说服力，我们可以通过这个<a href="https://play.golang.org/p/9U22NfrXeq">素数筛选程序</a>来理解 Go 的并发编程：</p>
-<pre><code class="language-go">// A concurrent prime sieve
-
-package main
-
-// Send the sequence 2, 3, 4, ... to channel 'ch'.
-func Generate(ch chan&lt;- int) {
-	for i := 2; ; i++ {
-		ch &lt;- i // Send 'i' to channel 'ch'.
-	}
-}
-
-// Copy the values from channel 'in' to channel 'out',
-// removing those divisible by 'prime'.
-func Filter(in &lt;-chan int, out chan&lt;- int, prime int) {
-	for {
-		i := &lt;-in // Receive value from 'in'.
-		if i%prime != 0 {
-			out &lt;- i // Send 'i' to 'out'.
-		}
-	}
-}
-
-// The prime sieve: Daisy-chain Filter processes.
-func main() {
-	ch := make(chan int) // Create a new channel.
-	go Generate(ch)      // Launch Generate goroutine.
-	for i := 0; i &lt; 10; i++ {
-		prime := &lt;-ch
-		print(prime, &quot;\n&quot;)
-		ch1 := make(chan int)
-		go Filter(ch, ch1, prime)
-		ch = ch1
-	}
-}
-</code></pre>
-<p>它并不是复杂度最低的算法，特别是寻找大素数方面，但却是最能体现 Go 并发编程、<a href="https://golang.org/doc/faq#What_operations_are_atomic_What_about_mutexes"><strong>通过通信共享内存</strong></a>的理念，而且非常优雅。</p>
-<p>在这段代码中，通过 goroutine 的组合，实现一层层的筛选器，筛选器之间通过 channel 通信，每一个筛选器就是一个素数，每个给 main goroutine 通信的内容也是素数，简直精妙。</p>
-<p>通过下面的 gif 动画能清晰的看到程序运行过程：</p>
-<figure data-type="image" tabindex="1"><img src="https://tva1.sinaimg.cn/large/006y8mN6ly1g85w9fqvjfg30l40c2qek.gif" alt="primesieve" loading="lazy"></figure>
-<h3 id="并发不是并行">并发不是并行</h3>
-<h4 id="go-的并行">Go 的并行</h4>
-<p>只需要 GOMAXPROCS 的值大于1，就可以让 Go 程序在多核机器上实现以并行的形式运行。但并发的程序一定可以并行吗？</p>
-<p>我们需要明确一个观点：**并发不是为了效率，并发的程序不一定可以并行。**还是上面素数的例子，这段代码是并发的，但不可以并行，因为它的每一个执行片段都需要上一个片段的筛选与通信。</p>
-<h4 id="正交概念">正交概念</h4>
-<p><em>正交概念：从数学上引进正交这个词，用于表示指相互独立，相互间不可替代，并且可以组合起来。</em></p>
-<p>在广义概念上来讲，并发与并行是<strong>正交概念</strong>，对于 Go 语言的并发性来讲也是如此。</p>
-<h4 id="concurrency-is-not-parallelism">《Concurrency is not Parallelism》</h4>
-<p>同样，在 Go 语言发布之初，有很多人混淆了并发与并行的概念，对此，Rob Pike 发表了另一篇演讲<a href="https://talks.golang.org/2012/waza.slide#1">《Concurrency is not Parallelism》</a>，通过地鼠烧书的比喻与简单负载均衡器的示例，详细的阐述了并发与并行的区别。</p>
-<p>这里不再复述地鼠例子，只是简单的总结，感兴趣的建议去看演讲：</p>
-<p><strong>并行是指同时能执行多个事情。</strong></p>
-<p><strong>并发关乎结构，是一种结构化程序的方式。</strong></p>
-<p><strong>并行关乎执行，表述的是程序的运行状态。</strong></p>
-<h3 id="go-语言是如何支持并发的">Go 语言是如何支持并发的？</h3>
-<p>上面一直在讲 Go 语言的并发性，接下来看下 Go 语言是如何做到的并发支持。</p>
-<p>我们在使用 Go 编写并发程序的过程中，无需关心线程的维护、调度等一系列问题，只需要关心程序结构的分解与组合、goroutine 之间的通信就可以写出良好的并发程序，这全部都要依赖于 Go 语言内建的 G-P-M 模型。</p>
-<h4 id="模型演化过程">模型演化过程</h4>
-<p>在 Go 语言1.0版本时，只有 G-M 模型，Google 工程师 Dmitry Vyukov 在<a href="https://docs.google.com/document/d/1TTj4T2JO42uD5ID9e89oa0sLKhJYD0Y_kqxDv3I3XMw/edit"><strong>《Scalable Go Scheduler Design Doc》</strong></a>中指出了该模型在并发伸缩性方面的问题：</p>
-<blockquote>
-<ol>
-<li>所有对 G 的操作：创建、重新调用等由单个全局锁(Sched.Lock)保护，浪费时间。</li>
-<li>当 M 阻塞时，G 需要传递给别的 M 执行，这导致调度延迟增大以及额外的性能损耗；</li>
-<li>M 用到的 <code>mCache</code> 属于内核线程，当 M 阻塞后相应的内存资源仍被占用，导致内存占用过高；</li>
-<li>由于 syscall 导致 M 的阻塞和恢复，导致了额外性能损耗。</li>
-</ol>
-</blockquote>
-<p>并且亲自下场，重新设计、改进了 Go scheduler，在 Go1.1 版本中实现了 G-P-M 模型：</p>
-<figure data-type="image" tabindex="2"><img src="https://tva1.sinaimg.cn/large/006y8mN6ly1g85w9rofpbj30yg0lcgn5.jpg" alt="gpm-nino" loading="lazy"></figure>
-<h4 id="g-p-m-模型">G-P-M 模型</h4>
-<p>那么这套模型与调度是怎样的呢？先来简单的说一下 G、P、M 的定义：</p>
-<ul>
-<li>G：表示 Goroutine，G 存储了 goroutine 执行的栈信息，状态，任务函数，可重用。</li>
-<li>P：Processor，表示逻辑处理器，拥有一个本地队列。对于 G 来说，P 相当于 CPU 内核，只有进入到 P 的队列中，才可以被调度。对于 M 来说，P 提供了相关的执行环境（Context），如内存分配状态，任务队列等。P 的数量就是程序可最大可并行的 G 的数量（前提：物理CPU核数 &gt;= P的数量），由用户设置的 GOMAXPROCS 决定。</li>
-<li>M：Machine，是对系统线程的抽象，是真正执行计算的部分。M 在绑定 P 后会在队列中获取 G，切换到 G 的执行栈并执行 G 的函数。M 数量不定，但同时只有 P 个 M 在执行，为了防止创建过多系统线程导致系统调度出现问题，目前默认最大限制10000个。</li>
-</ul>
-<p>接下来了解这套模型的基本调度，在调度过程中还有一个 <a href="http://supertech.csail.mit.edu/papers/steal.pdf"><em>work-stealing</em></a> 的算法：</p>
-<ul>
-<li>每个 P 维护一个本地队列；</li>
-<li>当一个 G 被创建后，放入当前 P 的本地队列中，如果队列已满，放入全局队列；</li>
-<li>当 M 执行完一个 G 后，会在 当前 P 的队列中取出新的 G，队列为空则在全局队列中加锁获取；</li>
-<li>如果全局队列也为空，则去其他的 P 的队列中偷出一半的 G，放入自己的本地队列。</li>
-</ul>
-<p>Go 语言就是凭借着这套优秀的并发模型与调度，实现了内建的并发支持。</p>
-<h3 id="goroutine-调度器的深入">Goroutine 调度器的深入</h3>
-<p>让我们深入的了解一下 goroutine 调度器。</p>
-<h4 id="调度器解决了什么问题">调度器解决了什么问题？</h4>
-<h5 id="阻塞问题">阻塞问题</h5>
-<blockquote>
-<p>如果任务G陷入到阻塞的系统调用中，内核线程M将一起阻塞，于是实际的运行线程少了一个。更严重的，如果所有M都阻塞了，那些本可以运行的任务G将没有系统资源运行。</p>
-</blockquote>
-<p>Go 在执行阻塞的系统调用时会调用 <code>entersyscallblock</code> ，然后通过 <code>handoffp</code> 解绑 M 对应的 P。如果此时 P 的本地队列中还有 G，P 会去寻找别的 M 或创建新的 M 继续执行，若本地队列为空，则进入 <code>pidle</code> 链表，等待有需要时被取出。</p>
-<p>如果是调用的 <code>entersyscall</code>，会将 P 的状态置为 <code>_Psyscall</code>。监控线程 <code>sysmon</code> 会通过 <code>retake</code> 循环所有的 P，发现是 <code>_Psyscall</code> 状态，就会调用 <code>handoffp</code> 来释放。</p>
-<h5 id="抢占调度">抢占调度</h5>
-<p>在 Go1.1 版本中，是没有抢占调度的，当前 G 只有涉及到锁操作，读写 channel 才会触发切换。若没有抢占机制，同一个 M 上的其他任务 G 有可能会长时间执行不到，甚至会被死循环锁住。</p>
-<p>于是 Dmitry Vyukov 提出了<a href="https://docs.google.com/document/d/1ETuA2IOmnaQ4j81AtTGT40Y4_Jr6_IDASEKg0t0dBR8/edit">《Go Preemptive Scheduler Design Doc》</a>, 并在1.2版本中引入了初级的抢占。</p>
-<p>监控线程 <code>sysmon</code> 会通过 <code>retake</code> 循环所有的 P，发现运行时间超出 <code>forcePreemptNS</code> 限制（10ms）的 P，就会通过 <code>preemptone</code> 发起抢占。</p>
-<h5 id="goroutine-的负载均衡">Goroutine 的负载均衡</h5>
-<blockquote>
-<p>内核线程M不是从全局任务队列中得到G，而是从M本地维护的G缓存中获取任务。如果某个M的G执行完了，而别的M还有很多G，这时如果G不能切换将造成CPU的浪费。</p>
-</blockquote>
-<p>这部分的实现是在 M 的启动函数 <code>mstart</code> 中 <code>schedule</code> 的调用来实现，它会先查找本地队列，然后查找全局队列，最后是随机偷取其他 P 的一半 G，直到取到 G 或停掉 M。为了防止全局队列被“饿死”，每61次调度，会先在全局队列中查找。</p>
-<h4 id="调度器相关源码">调度器相关源码</h4>
-<p>调度器部分的代码主要集中在 <code>src/runtime/runtime2.go</code> 与 <code>src/runtime/proc.go</code> 这两个文件中。</p>
-<p>调度器的4个基本结构：g、m、p、schedt，都在 <code>runtime2.go</code> 中，<code>schedt</code> 可能有些陌生，它是调度器的核心结构，也是全局资源池，用来存储 G 的全局队列，空闲的 P 链表 <code>pidle</code>，空闲的 M 链表 <code>midle</code> 等等。</p>
-<p>调度器的具体实现函数都在 <code>proc.go</code> 中，用户的所有代码都是运行在 goroutine 中，Go 在运行时会将 <code>main</code> 中的代码放入 <code>main goroutine</code> 中运行，这时还会启动监控系统 <code>sysmon</code>。</p>
-<p>更多关于调度器的细节，例如加锁，与 GC 的交互等，需要通过进一步的阅读源码来了解。</p>
-<h3 id="结束语">结束语</h3>
-<p>看到这里，相信大家对“并发”会有全新的认识，本文旨在讲清 Go 语言的并发性，在以后的 Go 语言编程过程中，希望更倾向于并发编程。并发编程不仅结构清晰，通常来说也会更容易并行运行，使得程序运行效率提高。</p>
-<h3 id="参考文章">参考文章</h3>
-<p><a href="https://talks.golang.org/2012/concurrency.slide#1">《Go Concurrency Patterns》</a></p>
-<p><a href="https://talks.golang.org/2012/waza.slide#1">《Concurrency is not Parallelism》</a></p>
-<p><a href="https://github.com/changkun/go-under-the-hood/blob/master/book/part2runtime/ch06sched/basic.md">《go-under-the-hood》</a></p>
-<p><a href="https://tonybai.com/2017/06/23/an-intro-about-goroutine-scheduler/">《也谈goroutine调度器》</a></p>
-<p><a href="https://ninokop.github.io/2017/12/10/Goroutine%E6%B5%85%E6%9E%90/">《Goroutine浅析》</a></p>
-]]></content>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[JSON Schema]]></title>
-        <id>https://cnbailian.github.io/post/json-schema/</id>
-        <link href="https://cnbailian.github.io/post/json-schema/">
-        </link>
-        <updated>2018-12-01T11:00:00.000Z</updated>
-        <summary type="html"><![CDATA[<p><strong>JSON Schema 详解：未完待续</strong></p>
-]]></summary>
-        <content type="html"><![CDATA[<p><strong>JSON Schema 详解：未完待续</strong></p>
-<!--more-->  
-<h2 id="第一篇了解-json">第一篇：了解 JSON</h2>
-<h4 id="介绍">介绍</h4>
-<p>JSON（JavaScriptObjectNotation） 是一种轻量级、基于文本、不限语言的数据交换格式，源自 ECMAScript，《<a href="http://www.ecma-international.org/publications/files/ECMA-ST/Ecma-262.pdf">Standard ECMA-262 3rd Edition - December 1999</a>》的一个子集，而后成为写入 RFC 文档：<a href="https://tools.ietf.org/html/rfc4627">RFC 4627</a>，最新的 RFC 标准为：<a href="https://tools.ietf.org/html/rfc8259">RFC 8259</a>。</p>
-<p>JSON 的官方 MIME 类型是 <code>application/json</code>，文件扩展名是 <code>.json</code>。</p>
-<h4 id="类型">类型</h4>
-<p><strong>两种结构化类型</strong>：</p>
-<ul>
-<li>Object：<code>名称/值</code>的集合（A collection of name/value pairs），在不同的语言中，被理解为 <code>object</code>，<code>record</code>，<code>struct</code>，<code>dictionary</code>，<code>hash table</code> 等等。
-<ul>
-<li>使用大括号<code>{</code>，<code>}</code>包裹<code>名称/值</code>的集合，名称是字符串类型，值可以是以上任意类型。名称与值使用<code>:</code>分隔。<code>名称/值</code>之间使用<code>,</code>分隔。</li>
-<li>格式示例：<code>{&quot;example&quot;:&quot;string&quot;}</code>。</li>
-</ul>
-</li>
-<li>Array：值的有序列表（An ordered list of values），在大部分语言中，被理解为 <code>array</code>。
-<ul>
-<li>使用中括号<code>[</code>，<code>]</code>包裹值的列表，值可以是以上任意类型。值与值之间使用`,``分隔。</li>
-<li>格式示例：<code>[0,&quot;1&quot;,null,false,true,{},[]]</code>。</li>
-</ul>
-</li>
-</ul>
-<p><strong>四种基本类型</strong>：</p>
-<ul>
-<li>字符串（string）
-<ul>
-<li>字符串是 Unicode 字符组成的集合，使用双引号包裹（<code>&quot;</code>），反斜杠转义（<code>\</code>）。</li>
-<li>与 C 或 Java 的字符串相似。</li>
-</ul>
-</li>
-<li>数值（number）
-<ul>
-<li>使用十进制，可以为负数或者小数。还可以用<code>e</code>或者<code>E</code>表示为指数形式。</li>
-<li>数值也与 C 或 Java 的数值相似。</li>
-</ul>
-</li>
-<li>布尔（boolean）
-<ul>
-<li><code>true</code> 或 <code>false</code>。</li>
-</ul>
-</li>
-<li>空（null）
-<ul>
-<li><code>null</code>。</li>
-</ul>
-</li>
-</ul>
-<p><strong>Tips</strong>：</p>
-<ul>
-<li>值的是可以嵌套的。</li>
-<li>名称是字符串类型，也就是说可以是任意 Unicode 字符，但是不推荐使用英文以外的语言，虽然 JSON 允许，但是有些使用 JSON 的语言可能不支持。</li>
-<li>符号中间允许空白字符。</li>
-<li>JSON 没有限制必须以 <code>object</code> 或结构类型作为顶层类型。</li>
-<li>但是某些语言解析某种类型会更加方便，比如给 ios 最好是使用 <code>object</code> 作为顶层类型。</li>
-<li>上述的集合或列表（string，object，array）可以是空集或空列。</li>
-</ul>
-<h4 id="示例">示例</h4>
-<pre><code># Object
-{
-    &quot;Image&quot;: {
-        &quot;Width&quot;:  800,
-        &quot;Height&quot;: 600,
-        &quot;Title&quot;:  &quot;View from 15th Floor&quot;,
-        &quot;Thumbnail&quot;: {
-            &quot;Url&quot;:    &quot;http://www.example.com/image/481989943&quot;,
-            &quot;Height&quot;: 125,
-            &quot;Width&quot;:  100
-        },
-        &quot;Animated&quot; : false,
-        &quot;IDs&quot;: [116, 943, 234, 38793]
-    }
-}
-
-# Array
-[
-    {
-        &quot;precision&quot;: &quot;zip&quot;,
-        &quot;Latitude&quot;:  37.7668,
-        &quot;Longitude&quot;: -122.3959,
-        &quot;Address&quot;:   &quot;&quot;,
-        &quot;City&quot;:      &quot;SAN FRANCISCO&quot;,
-        &quot;State&quot;:     &quot;CA&quot;,
-        &quot;Zip&quot;:       &quot;94107&quot;,
-        &quot;Country&quot;:   &quot;US&quot;
-    },
-    {
-        &quot;precision&quot;: &quot;zip&quot;,
-        &quot;Latitude&quot;:  37.371991,
-        &quot;Longitude&quot;: -122.026020,
-        &quot;Address&quot;:   &quot;&quot;,
-        &quot;City&quot;:      &quot;SUNNYVALE&quot;,
-        &quot;State&quot;:     &quot;CA&quot;,
-        &quot;Zip&quot;:       &quot;94085&quot;,
-        &quot;Country&quot;:   &quot;US&quot;
-    }
-]
-
-# Only values
-
-&quot;Hello world!&quot;
-
-42
-
-true
-
-null
-</code></pre>
-<h2 id="第二篇介绍">第二篇：介绍</h2>
-<h4 id="版本">版本</h4>
-<p>当前版本：<a href="http://json-schema.org/specification.html">draft-07</a>。</p>
-<h4 id="简介">简介</h4>
-<p>JSON Schema 是一个用于<strong>注释</strong>和<strong>验证</strong> JSON documents 的词汇表。</p>
-<p>JSON Schema 本身也是基于 JSON 格式，并且提供了一系列的规范，用于描述 JSON 数据的结构，旨在定义 JSON 数据的验证，文档，超链接导航和交互控制。</p>
-<h4 id="用途">用途</h4>
-<ul>
-<li>对数据结构进行描述</li>
-<li>构建人机可读的文档</li>
-<li>校验数据</li>
-</ul>
-<h4 id="项目状态">项目状态</h4>
-<p>共有三个规范：</p>
-<ul>
-<li><a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema/">JSON Schema (core)</a></li>
-<li><a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-validation/">JSON Schema Validation</a></li>
-<li><a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-hyperschema/">JSON Hyper-Schema</a></li>
-</ul>
-<p>项目组正在努力使它们成为正式的 RFC 标准。</p>
-<p><em><a href="https://github.com/json-schema-org/json-schema-spec/milestone/6">draft-08</a></em></p>
-<h4 id="如何应用">如何应用</h4>
-<p>可以用于生成模拟数据，确保接近真实数据。</p>
-<p>用于校验数据，实现自动化测试。</p>
-<p>多端共用同一份验证。</p>
-<h2 id="第三篇core-规范">第三篇：Core 规范</h2>
-<h4 id="简介-2">简介</h4>
-<p><a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema/">JSON Schema (core)</a></p>
-<p>此规范主要是定义了核心术语、机制，包括引用其他 JSON Schema，以及正在使用的词汇表。</p>
-<h4 id="状态">状态</h4>
-<p>草案目前于2018年03月19日最后更新，到期时间2018年09月20日，ietf地址：<a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema/">https://datatracker.ietf.org/doc/draft-handrews-json-schema/</a>。</p>
-<h4 id="概述">概述</h4>
-<p><strong>媒体类型</strong></p>
-<p>JSON 的媒体类型：<a href="https://tools.ietf.org/html/rfc8259#section-1.2">application/json</a> 。</p>
-<p>JSON Schema 的媒体类型为 <code>application/schema+json</code>，它还有另外一种可选媒体类型用于提供额外的扩展功能：<code>application/schema-instance+json</code>。</p>
-<p><strong>验证</strong></p>
-<p>JSON Schema 描述了 <code>JSON 文档(JSON document)</code> 的结构，例如属性、长度限制等，程序可以以此判断 <code>实例(Instance)</code> 是否符合规范。</p>
-<p>规范与关键字在 <a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-validation/">JSON Schema Validation</a> 中定义。</p>
-<p><strong>注释</strong></p>
-<p>JSON Schema 可以对 <code>实例(Instance)</code> 添加注释。</p>
-<p>规范与关键字在 <a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-validation/">JSON Schema Validation</a> 中定义。</p>
-<p><strong>超媒体与链接</strong></p>
-<p>JSON Hyper-Schema 描述了  <code>JSON 文档(JSON document)</code> 的超文本结构，包括 <code>实例(Instance)</code> 中的资源链接关系等。</p>
-<p>规范与关键字在 <a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-hyperschema/">JSON Hyper-Schema</a> 中定义。</p>
-<h4 id="定义">定义</h4>
-<p><strong>JSON Document</strong></p>
-<p><code>JSON 文档(JSON document)</code> 是使用 <code>application/json</code> 媒体类型描述的资源。</p>
-<p>简言之就是 JSON 值。</p>
-<p><em>JSON Schema 中， <code>JSON 值(JSON value)</code>、<code>JSON 文本(JSON text)</code>、<code>JSON 文档(JSON document)</code>是等义词。</em></p>
-<p><em>JSON Schema 也是 <code>JSON 文档(JSON document)</code>。</em></p>
-<p><strong>Instance</strong></p>
-<p><code>实例(Instance)</code> 是使用 JSON Schema 描述的 <code>JSON 文档(JSON document)</code>。</p>
-<p><strong>JSON Schema document</strong></p>
-<p>使用 <code>application/schema+json</code> 媒体类型描述的 <code>JSON 文档(JSON document)</code>，简称 schema。</p>
-<h4 id="关键字">关键字</h4>
-<p><strong>$schema</strong></p>
-<p><code>$schema</code> 关键字用于声明当前 <code>JSON 文档(JSON document)</code> 是 <code>JSON Schema document</code>。</p>
-<p>值可以是 JSON Schema 版本的标识符，也是资源的位置，但必须是 <a href="https://tools.ietf.org/html/rfc3986">URI</a>。</p>
-<p><strong>$id</strong></p>
-<p><code>$id</code> 关键字用于定义 schema 基本的 URI，可用于 <code>$ref</code> 的引用标识，值必须是 <a href="https://tools.ietf.org/html/rfc3986">URI</a>。</p>
-<p><strong>$ref</strong></p>
-<p><code>$ref</code> 关键字用于定义引用 schema，值必须是 <a href="https://tools.ietf.org/html/rfc3986">URI</a>。</p>
-<p>URI 只是标识符，不是网络定位器。如果 URI 是可以访问的 URL，不应该去下载。</p>
-<p>如果有两个 schema 互相使用 <code>$ref</code> 进行引用，不应该陷入无限循环。</p>
-<p><strong>$comment</strong></p>
-<p><code>$comment</code> 用于 schema 开发人员对文档进行注释，不需要展示给最终用户看。</p>
 ]]></content>
     </entry>
 </feed>

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" >
 
-<title>traefik | 白联</title>
+<title>Go语言学习笔记 | 白联</title>
 
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 
@@ -101,22 +101,98 @@
 
       <div class="main-container">
         <div class="content-container" data-aos="fade-up">
-          <h2 class="current-tag">标签: traefik</h2>
+          <h2 class="current-tag">标签: Go语言学习笔记</h2>
           
             <article class="post-item">
               <div class="left">
-                <a href="https://cnbailian.github.io/post/traefik-cannot-proxy-mysql/">
-                  <h2 class="post-title">记一次 Traefik 无法代理 MySQL 问题</h2>
+                <a href="https://cnbailian.github.io/post/go-gc-learning-notes/">
+                  <h2 class="post-title">Go GC 学习笔记</h2>
                 </a>
                 <div class="post-date">
-                  2020-04-13
+                  2021-02-19
                 </div>
                 <div class="post-abstract">
-                  <p>Traefik 从 2.0 版本开始支持 TCP route，我也使用 Traefik 作为 kubernetes 集群的 Ingress，但是在使用过程中，发现 Traefik 为 MySQL 创建的 TCP route 无法正常工作，经过排查搜索后发现了官方人员关于这个疑惑的<a href="https://community.containo.us/t/v2-tcp-router-with-tls-example/2664">解答</a>，以下截取片段：</p>
-<blockquote>
-<p>But be careful: not all protocols based on TCP and using TLS supports the SNI routing or the passthrough. It requires the protocol supporting SNI (for instance MySQL doesn't) and doing a TLS handshake (if it is a STARTTLS, then it does not work).</p>
-</blockquote>
-<p>虽然找到了问题是由于 MySQL 不支持，但也勾起了我的好奇心，什么是 SNI？Traefik 为什么要使用 <code>HostSNI</code> 创建 TCP route 呢？为什么 MySQL 不支持 SNI 呢？于是带着这些问题，我开始寻找答案。</p>
+                  <p>本文用于持续记录 Go GC 相关技术学习笔记。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/go-stack-notes/">
+                  <h2 class="post-title">Go 栈笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-02-08
+                </div>
+                <div class="post-abstract">
+                  <p>本文用于持续记录 Go 栈相关源码学习笔记。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/go-runtime-notes/">
+                  <h2 class="post-title">Go Runtime 笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-01-25
+                </div>
+                <div class="post-abstract">
+                  <p>本文用于记录 Go 语言运行时及调度器方面源码的学习笔记。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/go-assembly-basic-notes/">
+                  <h2 class="post-title">Go 汇编基础学习笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-01-22
+                </div>
+                <div class="post-abstract">
+                  <p>本文用于持续记录 Go 语言汇编基础学习笔记。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/go-basic-structure-learning-notes/">
+                  <h2 class="post-title">Go 语言基础结构学习笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-01-21
+                </div>
+                <div class="post-abstract">
+                  <p>本章记录 Go 语言的数据结构及基础包学习笔记，结合源码进行理解。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/go-memory-allocator-learning-notes/">
+                  <h2 class="post-title">Go 内存分配器学习笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-01-21
+                </div>
+                <div class="post-abstract">
+                  <p>本文用于持续记录 Go GC 相关技术学习笔记。</p>
 
                 </div>
               </div>
