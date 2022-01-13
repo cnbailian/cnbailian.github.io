@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://cnbailian.github.io</id>
     <title>白联</title>
-    <updated>2022-01-12T07:31:09.415Z</updated>
+    <updated>2022-01-13T01:36:45.540Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://cnbailian.github.io"/>
     <link rel="self" href="https://cnbailian.github.io/atom.xml"/>
@@ -1386,7 +1386,7 @@ $ kubectl apply -f nginx.yaml
 <p>只要集群中的控制器在运行并且进行有效的修改，整体状态的稳定与否是无关紧要的。</p>
 </blockquote>
 <h3 id="关于控制器的实现原理">关于控制器的实现原理</h3>
-<p>限于篇幅，不讲了。感兴趣的可以看 Tower 上关于 Controller 原理和源码的笔记：<a href="/posts/kubernetes-samplecontroller">《从 SampleController 项目看 kubernetes controller 的设计》</a>。</p>
+<p>限于篇幅，不讲了。感兴趣的可以看我的另一篇关于 Controller 原理和源码的笔记：<a href="/post/kubernetes-samplecontroller">《从 SampleController 项目看 kubernetes controller 的设计》</a>。</p>
 <h2 id="声明式的优点">声明式的优点</h2>
 <h3 id="可读性">可读性</h3>
 <p>声明式的描述通常比一连串的命令更具有可读性。</p>
