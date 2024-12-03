@@ -127,7 +127,7 @@
 </ul>
 <p>vxlan 实现原理就是使用 VTEP 设备对服务器发出和收到的数据包进行二次封装和解封。所以 vxlan 这类隧道网络对原有的网络架构影响小，原来的网络不需要做任何改动，在原有网络上架设一层新的网络。</p>
 <h3 id="vxlan-模型">VXLAN 模型</h3>
-<figure data-type="image" tabindex="1"><img src="https://tva1.sinaimg.cn/large/007S8ZIlly1gi3vmfk4nmj30g808ft9m.jpg" alt="vxlan" loading="lazy"></figure>
+<figure data-type="image" tabindex="1"><img src="https://cdn.img2ipfs.com/weibo/tva1.sinaimg.cn/large/007S8ZIlly1gi3vmfk4nmj30g808ft9m.jpg" alt="vxlan" loading="lazy"></figure>
 <p>物理网络上可以创建多个 vxlan 网络，这些 vxlan 网络可以认为是一个隧道，不同节点的虚拟机能够通过隧道直连。在每个端点上都有一个 vtep 负责 vxlan 协议的封包和解包，也就是在虚拟报文上封装 vtep 通信的报文头部。每个 vxlan 网络由唯一的 VNI 标识，不同的 vxlan 可以不互相影响。</p>
 <ul>
 <li>VTEP（VXLAN Tunnel Endpoints）：vxlan 网络的边缘设备，用来进行 vxlan 报文的处理（封包和解包）。vtep 可以是网络设备（比如交换机），也可以是一台机器（比如虚拟化集群中的宿主机）。</li>
@@ -135,7 +135,7 @@
 <li>Tunnel：隧道是一个逻辑上的概念，在 vxlan 模型中并没有具体的物理实体想对应。隧道可以看做是一种虚拟通道，vxlan 通信双方（图中的虚拟机）认为自己是在直接通信，并不知道底层网络的存在。从整体来说，每个 vxlan 网络像是为通信的虚拟机搭建了一个单独的通信通道，也就是隧道。</li>
 </ul>
 <h3 id="vxlan-报文解析">VXLAN 报文解析</h3>
-<figure data-type="image" tabindex="2"><img src="https://tva1.sinaimg.cn/large/007S8ZIlly1gi3w2klximj30vn0f040c.jpg" alt="post-img" loading="lazy"></figure>
+<figure data-type="image" tabindex="2"><img src="https://cdn.img2ipfs.com/weibo/tva1.sinaimg.cn/large/007S8ZIlly1gi3w2klximj30vn0f040c.jpg" alt="post-img" loading="lazy"></figure>
 <p>白色部分是虚拟机发送的原始报文（二层帧，包含了 MAC 头部、IP 头部和传输层头部的报文），前面加上了 vxlan 头部用于保存 vxlan 相关内容，再前面是标准的 UDP 协议头部（UDP 头部、IP 头部和 MAC 头部）用来在底层网络上传输报文。</p>
 <p>最外层的 UDP 协议用来在底层网络上传输，也就是 vtep 之间互相通信的基础。中间是 VXLAN 头部，vetp 接到报文后，根据这部分内容处理 vxlan 逻辑，主要是根据 VNI 发送到最终的虚拟机。最里面是原始报文，也就是虚拟机看到的报文内容。</p>
 <p>报文各部分意义如下：</p>
