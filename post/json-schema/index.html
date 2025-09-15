@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>JSON Schema | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="JSON Schema 详解：未完待续
+  
+第一篇：了解 JSON
+介绍
+JSON（JavaScriptObjectNotation） 是一种轻量级、基于文本、不限语言的数据交换格式，源自 ECMAScript，《Standard ECM..." />
+    <meta name="keywords" content="REST,API" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">JSON Schema</h2>
+            <div class="post-date">2018-12-01</div>
+            
+            <div class="post-content" v-pre>
+              <p><strong>JSON Schema 详解：未完待续</strong></p>
+<!--more-->  
+<h2 id="第一篇了解-json">第一篇：了解 JSON</h2>
+<h4 id="介绍">介绍</h4>
+<p>JSON（JavaScriptObjectNotation） 是一种轻量级、基于文本、不限语言的数据交换格式，源自 ECMAScript，《<a href="http://www.ecma-international.org/publications/files/ECMA-ST/Ecma-262.pdf">Standard ECMA-262 3rd Edition - December 1999</a>》的一个子集，而后成为写入 RFC 文档：<a href="https://tools.ietf.org/html/rfc4627">RFC 4627</a>，最新的 RFC 标准为：<a href="https://tools.ietf.org/html/rfc8259">RFC 8259</a>。</p>
+<p>JSON 的官方 MIME 类型是 <code>application/json</code>，文件扩展名是 <code>.json</code>。</p>
+<h4 id="类型">类型</h4>
+<p><strong>两种结构化类型</strong>：</p>
+<ul>
+<li>Object：<code>名称/值</code>的集合（A collection of name/value pairs），在不同的语言中，被理解为 <code>object</code>，<code>record</code>，<code>struct</code>，<code>dictionary</code>，<code>hash table</code> 等等。
+<ul>
+<li>使用大括号<code>{</code>，<code>}</code>包裹<code>名称/值</code>的集合，名称是字符串类型，值可以是以上任意类型。名称与值使用<code>:</code>分隔。<code>名称/值</code>之间使用<code>,</code>分隔。</li>
+<li>格式示例：<code>{&quot;example&quot;:&quot;string&quot;}</code>。</li>
+</ul>
+</li>
+<li>Array：值的有序列表（An ordered list of values），在大部分语言中，被理解为 <code>array</code>。
+<ul>
+<li>使用中括号<code>[</code>，<code>]</code>包裹值的列表，值可以是以上任意类型。值与值之间使用`,``分隔。</li>
+<li>格式示例：<code>[0,&quot;1&quot;,null,false,true,{},[]]</code>。</li>
+</ul>
+</li>
+</ul>
+<p><strong>四种基本类型</strong>：</p>
+<ul>
+<li>字符串（string）
+<ul>
+<li>字符串是 Unicode 字符组成的集合，使用双引号包裹（<code>&quot;</code>），反斜杠转义（<code>\</code>）。</li>
+<li>与 C 或 Java 的字符串相似。</li>
+</ul>
+</li>
+<li>数值（number）
+<ul>
+<li>使用十进制，可以为负数或者小数。还可以用<code>e</code>或者<code>E</code>表示为指数形式。</li>
+<li>数值也与 C 或 Java 的数值相似。</li>
+</ul>
+</li>
+<li>布尔（boolean）
+<ul>
+<li><code>true</code> 或 <code>false</code>。</li>
+</ul>
+</li>
+<li>空（null）
+<ul>
+<li><code>null</code>。</li>
+</ul>
+</li>
+</ul>
+<p><strong>Tips</strong>：</p>
+<ul>
+<li>值的是可以嵌套的。</li>
+<li>名称是字符串类型，也就是说可以是任意 Unicode 字符，但是不推荐使用英文以外的语言，虽然 JSON 允许，但是有些使用 JSON 的语言可能不支持。</li>
+<li>符号中间允许空白字符。</li>
+<li>JSON 没有限制必须以 <code>object</code> 或结构类型作为顶层类型。</li>
+<li>但是某些语言解析某种类型会更加方便，比如给 ios 最好是使用 <code>object</code> 作为顶层类型。</li>
+<li>上述的集合或列表（string，object，array）可以是空集或空列。</li>
+</ul>
+<h4 id="示例">示例</h4>
+<pre><code># Object
+{
+    &quot;Image&quot;: {
+        &quot;Width&quot;:  800,
+        &quot;Height&quot;: 600,
+        &quot;Title&quot;:  &quot;View from 15th Floor&quot;,
+        &quot;Thumbnail&quot;: {
+            &quot;Url&quot;:    &quot;http://www.example.com/image/481989943&quot;,
+            &quot;Height&quot;: 125,
+            &quot;Width&quot;:  100
+        },
+        &quot;Animated&quot; : false,
+        &quot;IDs&quot;: [116, 943, 234, 38793]
+    }
+}
+
+# Array
+[
+    {
+        &quot;precision&quot;: &quot;zip&quot;,
+        &quot;Latitude&quot;:  37.7668,
+        &quot;Longitude&quot;: -122.3959,
+        &quot;Address&quot;:   &quot;&quot;,
+        &quot;City&quot;:      &quot;SAN FRANCISCO&quot;,
+        &quot;State&quot;:     &quot;CA&quot;,
+        &quot;Zip&quot;:       &quot;94107&quot;,
+        &quot;Country&quot;:   &quot;US&quot;
+    },
+    {
+        &quot;precision&quot;: &quot;zip&quot;,
+        &quot;Latitude&quot;:  37.371991,
+        &quot;Longitude&quot;: -122.026020,
+        &quot;Address&quot;:   &quot;&quot;,
+        &quot;City&quot;:      &quot;SUNNYVALE&quot;,
+        &quot;State&quot;:     &quot;CA&quot;,
+        &quot;Zip&quot;:       &quot;94085&quot;,
+        &quot;Country&quot;:   &quot;US&quot;
+    }
+]
+
+# Only values
+
+&quot;Hello world!&quot;
+
+42
+
+true
+
+null
+</code></pre>
+<h2 id="第二篇介绍">第二篇：介绍</h2>
+<h4 id="版本">版本</h4>
+<p>当前版本：<a href="http://json-schema.org/specification.html">draft-07</a>。</p>
+<h4 id="简介">简介</h4>
+<p>JSON Schema 是一个用于<strong>注释</strong>和<strong>验证</strong> JSON documents 的词汇表。</p>
+<p>JSON Schema 本身也是基于 JSON 格式，并且提供了一系列的规范，用于描述 JSON 数据的结构，旨在定义 JSON 数据的验证，文档，超链接导航和交互控制。</p>
+<h4 id="用途">用途</h4>
+<ul>
+<li>对数据结构进行描述</li>
+<li>构建人机可读的文档</li>
+<li>校验数据</li>
+</ul>
+<h4 id="项目状态">项目状态</h4>
+<p>共有三个规范：</p>
+<ul>
+<li><a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema/">JSON Schema (core)</a></li>
+<li><a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-validation/">JSON Schema Validation</a></li>
+<li><a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-hyperschema/">JSON Hyper-Schema</a></li>
+</ul>
+<p>项目组正在努力使它们成为正式的 RFC 标准。</p>
+<p><em><a href="https://github.com/json-schema-org/json-schema-spec/milestone/6">draft-08</a></em></p>
+<h4 id="如何应用">如何应用</h4>
+<p>可以用于生成模拟数据，确保接近真实数据。</p>
+<p>用于校验数据，实现自动化测试。</p>
+<p>多端共用同一份验证。</p>
+<h2 id="第三篇core-规范">第三篇：Core 规范</h2>
+<h4 id="简介-2">简介</h4>
+<p><a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema/">JSON Schema (core)</a></p>
+<p>此规范主要是定义了核心术语、机制，包括引用其他 JSON Schema，以及正在使用的词汇表。</p>
+<h4 id="状态">状态</h4>
+<p>草案目前于2018年03月19日最后更新，到期时间2018年09月20日，ietf地址：<a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema/">https://datatracker.ietf.org/doc/draft-handrews-json-schema/</a>。</p>
+<h4 id="概述">概述</h4>
+<p><strong>媒体类型</strong></p>
+<p>JSON 的媒体类型：<a href="https://tools.ietf.org/html/rfc8259#section-1.2">application/json</a> 。</p>
+<p>JSON Schema 的媒体类型为 <code>application/schema+json</code>，它还有另外一种可选媒体类型用于提供额外的扩展功能：<code>application/schema-instance+json</code>。</p>
+<p><strong>验证</strong></p>
+<p>JSON Schema 描述了 <code>JSON 文档(JSON document)</code> 的结构，例如属性、长度限制等，程序可以以此判断 <code>实例(Instance)</code> 是否符合规范。</p>
+<p>规范与关键字在 <a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-validation/">JSON Schema Validation</a> 中定义。</p>
+<p><strong>注释</strong></p>
+<p>JSON Schema 可以对 <code>实例(Instance)</code> 添加注释。</p>
+<p>规范与关键字在 <a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-validation/">JSON Schema Validation</a> 中定义。</p>
+<p><strong>超媒体与链接</strong></p>
+<p>JSON Hyper-Schema 描述了  <code>JSON 文档(JSON document)</code> 的超文本结构，包括 <code>实例(Instance)</code> 中的资源链接关系等。</p>
+<p>规范与关键字在 <a href="https://datatracker.ietf.org/doc/draft-handrews-json-schema-hyperschema/">JSON Hyper-Schema</a> 中定义。</p>
+<h4 id="定义">定义</h4>
+<p><strong>JSON Document</strong></p>
+<p><code>JSON 文档(JSON document)</code> 是使用 <code>application/json</code> 媒体类型描述的资源。</p>
+<p>简言之就是 JSON 值。</p>
+<p><em>JSON Schema 中， <code>JSON 值(JSON value)</code>、<code>JSON 文本(JSON text)</code>、<code>JSON 文档(JSON document)</code>是等义词。</em></p>
+<p><em>JSON Schema 也是 <code>JSON 文档(JSON document)</code>。</em></p>
+<p><strong>Instance</strong></p>
+<p><code>实例(Instance)</code> 是使用 JSON Schema 描述的 <code>JSON 文档(JSON document)</code>。</p>
+<p><strong>JSON Schema document</strong></p>
+<p>使用 <code>application/schema+json</code> 媒体类型描述的 <code>JSON 文档(JSON document)</code>，简称 schema。</p>
+<h4 id="关键字">关键字</h4>
+<p><strong>$schema</strong></p>
+<p><code>$schema</code> 关键字用于声明当前 <code>JSON 文档(JSON document)</code> 是 <code>JSON Schema document</code>。</p>
+<p>值可以是 JSON Schema 版本的标识符，也是资源的位置，但必须是 <a href="https://tools.ietf.org/html/rfc3986">URI</a>。</p>
+<p><strong>$id</strong></p>
+<p><code>$id</code> 关键字用于定义 schema 基本的 URI，可用于 <code>$ref</code> 的引用标识，值必须是 <a href="https://tools.ietf.org/html/rfc3986">URI</a>。</p>
+<p><strong>$ref</strong></p>
+<p><code>$ref</code> 关键字用于定义引用 schema，值必须是 <a href="https://tools.ietf.org/html/rfc3986">URI</a>。</p>
+<p>URI 只是标识符，不是网络定位器。如果 URI 是可以访问的 URL，不应该去下载。</p>
+<p>如果有两个 schema 互相使用 <code>$ref</code> 进行引用，不应该陷入无限循环。</p>
+<p><strong>$comment</strong></p>
+<p><code>$comment</code> 用于 schema 开发人员对文档进行注释，不需要展示给最终用户看。</p>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/-YnRsaDfq/" class="tag">
+                    REST
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/wzarT9Fa4G/" class="tag">
+                    API
+                  </a>
+                
+              </div>
+            
+            
+              <div class="next-post">
+                <div class="next">下一篇</div>
+                <a href="https://cnbailian.github.io/post/oauth2-and-oauth2-package/">
+                  <h3 class="post-title">
+                    OAuth2.0 与 oauth2-server 库的使用
+                  </h3>
+                </a>
+              </div>
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

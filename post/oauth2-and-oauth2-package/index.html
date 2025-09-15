@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>OAuth2.0 与 oauth2-server 库的使用 | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="OAuth2.0 是关于授权的开放网络标准，它允许用户已第三方应用获取该用户在某一网站的私密资源，而无需提供用户名与密码，目前已在全世界得到广泛应用。
+league/oauth2-server 是一个轻量级并且功能强大的符合 OAuth2...." />
+    <meta name="keywords" content="oauth,php" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">OAuth2.0 与 oauth2-server 库的使用</h2>
+            <div class="post-date">2018-11-22</div>
+            
+            <div class="post-content" v-pre>
+              <p><a href="https://en.wikipedia.org/wiki/OAuth">OAuth2.0</a> 是关于授权的开放网络标准，它允许用户已第三方应用获取该用户在某一网站的私密资源，而无需提供用户名与密码，目前已在全世界得到广泛应用。</p>
+<p><a href="https://github.com/thephpleague/oauth2-server">league/oauth2-server</a> 是一个轻量级并且功能强大的符合 OAuth2.0 协议的 PHP 库，使用它可以构建出标准的 OAuth2.0 授权服务器。</p>
+<p>本文通过对 PHP 库：league/oauth2-server 进行实践的同时，理解 OAuth2.0 的工作流程与设计思路。</p>
+<!--more-->  
+<h2 id="术语">术语</h2>
+<p>了解 OAuth2.0 与 oauth2-server 的专用术语，对于理解后面内容很有帮助。</p>
+<p><strong>OAuth2.0 定义了四个角色</strong></p>
+<ol>
+<li><strong>Client</strong>：客户端，第三方应用程序。</li>
+<li><strong>Resource Owner</strong>：资源所有者，授权 Client 访问其帐户的用户。</li>
+<li><strong>Authorization server</strong>：授权服务器，服务商专用于处理用户授权认证的服务器。</li>
+<li><strong>Resource server</strong>：资源服务器，服务商用于存放用户受保护资源的服务器，它可以与授权服务器是同一台服务器，也可以是不同的服务器。</li>
+</ol>
+<p><strong>oauth2-server</strong></p>
+<ol>
+<li><strong>Access token</strong>：用于访问受保护资源的令牌。</li>
+<li><strong>Authorization code</strong>：发放给应用程序的中间令牌，客户端应用使用此令牌交换 access token。</li>
+<li><strong>Scope</strong>：授予应用程序的权限范围。</li>
+<li><strong>JWT</strong>：<a href="https://tools.ietf.org/html/rfc7519">Json Web Token</a> 是一种用于安全传输的数据传输格式。</li>
+</ol>
+<h2 id="运行流程">运行流程</h2>
+<figure data-type="image" tabindex="1"><img src="https://image.baidu.com/search/down?url=https://tva1.sinaimg.cn/large/006y8mN6ly1g85wd2xhuoj30o70lkq3n.jpg" alt="flowchart.png" loading="lazy"></figure>
+<h2 id="安装">安装</h2>
+<p>推荐使用 <a href="https://getcomposer.org/">Composer</a> 进行安装：</p>
+<pre><code class="language-string">composer require league/oauth2-server
+</code></pre>
+<p>根据<a href="#%E6%8E%88%E6%9D%83%E6%A8%A1%E5%BC%8F">授权模式</a>的不同，oauth2-server 提供了不同的 Interface 与 Triat 帮助实现。</p>
+<p><em>本文发布时，版本号为7.3.1。</em></p>
+<p><strong>生成公钥与私钥</strong></p>
+<p>公钥与私钥用于签名和验证传输的 <a href="https://tools.ietf.org/html/rfc7519">JWT</a>，授权服务器使用私钥签名 JWT，资源服务器拥有公钥验证 JWT。</p>
+<p><em>oauth2-server 使用 JWT 传输访问令牌(access token)，方便资源服务器获取其中内容，所以需要使用非对称加密。</em></p>
+<p>生成私钥，在终端中运行：</p>
+<pre><code class="language-string">openssl genrsa -out private.key 2048
+</code></pre>
+<p>使用私钥提取私钥：</p>
+<pre><code class="language-string">openssl rsa -in private.key -pubout -out public.key
+</code></pre>
+<p>私钥必须保密于授权服务器中，并将公钥分发给资源服务器。</p>
+<p><strong>生成加密密钥</strong></p>
+<p>加密密钥用于加密授权码(auth code)与刷新令牌(refesh token)，AuthorizationServer(授权服务器启动类)接受两种加密密钥，<code>string</code> 或 <code>defuse/php-encryption</code> 库的对象。</p>
+<p><em>加密授权码(auth code)与刷新令牌(refesh token)只有授权权服务器使用，所以使用对称加密。</em></p>
+<p>生成字符串密钥，在终端中输入：</p>
+<pre><code class="language-string">php -r 'echo base64_encode(random_bytes(32)), PHP_EOL;'
+</code></pre>
+<p>生成对象，在项目根目录的终端中输入：</p>
+<pre><code class="language-string">vendor/bin/generate-defuse-key
+</code></pre>
+<p>将获得的内容，传入 AuthorizationServer：</p>
+<pre><code>use \Defuse\Crypto\Key;
+$server = new AuthorizationServer(
+    $clientRepository,
+    $accessTokenRepository,
+    $scopeRepository,
+    $privateKeyPath,
+    Key::loadFromAsciiSafeString($encryptionKey) //传入加密密钥
+);
+</code></pre>
+<p><strong>PHP版本支持</strong></p>
+<ul>
+<li>PHP 7.0</li>
+<li>PHP 7.1</li>
+<li>PHP 7.2</li>
+</ul>
+<h2 id="授权模式">授权模式</h2>
+<p>OAuth2.0 定义了四种授权模式，以应对不同情况时的授权。</p>
+<ol>
+<li>授权码模式</li>
+<li>隐式授权模式</li>
+<li>密码模式</li>
+<li>客户端模式</li>
+</ol>
+<h2 id="客户端类型">客户端类型</h2>
+<ul>
+<li>保密的：
+<ul>
+<li>客户端可以安全的存储自己与用户的凭据（例如：有所属的服务器端）</li>
+</ul>
+</li>
+<li>公开的：
+<ul>
+<li>客户端无法安全的存储自己与用户的凭据（例如：运行在浏览器的单页应用）</li>
+</ul>
+</li>
+</ul>
+<h2 id="选用哪种授权模式">选用哪种授权模式？</h2>
+<p>如果客户端是保密的，应使用<a href="#%E6%8E%88%E6%9D%83%E7%A0%81%E6%A8%A1%E5%BC%8F">授权码模式</a>。</p>
+<p>如果客户端是公开的，应使用<a href="#%E9%9A%90%E5%BC%8F%E6%8E%88%E6%9D%83%E6%A8%A1%E5%BC%8F">隐式授权模式</a>。</p>
+<p>如果用户对于此客户端高度信任（例如：第一方应用程序或操作系统程序），应使用<a href="#%E5%AF%86%E7%A0%81%E6%A8%A1%E5%BC%8F">密码模式</a>。</p>
+<p>如果客户端是以自己的名义，不与用户产生关系，应使用<a href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%A8%A1%E5%BC%8F">客户端模式</a>。</p>
+<h2 id="预先注册">预先注册</h2>
+<p>客户端需要预先在授权服务器进行注册，用以获取 <code>client_id</code> 与 <code>client_secret</code>，也可以在注册是预先设定好 <code>redirect_uri</code>，以便于之后可以使用默认的 <code>redirect_uri</code>。</p>
+<h2 id="授权码模式">授权码模式</h2>
+<p>授权码模式是 OAuth2.0 种功能最完整，流程最严密的一种模式，如果你使用过 Google 或 QQ 登录过第三方应用程序，应该会对这个流程的第一部分很熟悉。</p>
+<h4 id="流程">流程</h4>
+<p><strong>第一部分（用户可见）</strong></p>
+<p>用户访问客户端，客户端将用户导向授权服务器时，将以下参数通过 <code>GET query</code> 传入：</p>
+<ul>
+<li><code>response_type</code>：授权类型，必选项，值固定为：<code>code</code></li>
+<li><code>client_id</code>：客户端ID，必选项</li>
+<li><code>redirect_uri</code>：重定向URI，可选项，不填写时默认预先注册的重定向URI</li>
+<li><code>scope</code>：权限范围，可选项，以空格分隔</li>
+<li><code>state</code>：<a href="https://zh.wikipedia.org/wiki/%E8%B7%A8%E7%AB%99%E8%AF%B7%E6%B1%82%E4%BC%AA%E9%80%A0">CSRF</a>令牌，可选项，但强烈建议使用，应将该值存储与用户会话中，以便在返回时验证</li>
+</ul>
+<p>用户选择是否给予客户端授权</p>
+<p>假设用户给予授权，授权服务器将用户导向客户端事先指定的 <code>redirect_uri</code>，并将以下参数通过 <code>GET query</code> 传入：</p>
+<ul>
+<li><code>code</code>：授权码(Authorization code)</li>
+<li><code>state</code>：请求中发送的 <code>state</code>，原样返回。客户端将此值与用户会话中的值进行对比，以确保授权码响应的是此客户端而非其他客户端程序</li>
+</ul>
+<p><strong>第二部分（用户不可见）</strong></p>
+<p>客户端已得到授权，通过 <code>POST</code> 请求向授权服务器获取访问令牌(access token)：</p>
+<ul>
+<li><code>grant_type</code>：授权模式，值固定为：<code>authorization_code</code></li>
+<li><code>client_id</code>：客户端ID</li>
+<li><code>client_secret</code>：客户端 secret</li>
+<li><code>redirect_uri</code>：使用与第一部分请求相同的 URI</li>
+<li><code>code</code>：第一部分所获的的授权码，要注意URL解码</li>
+</ul>
+<p>授权服务器核对授权码与重定向 URI，确认无误后，向客户端响应下列内容：</p>
+<ul>
+<li>
+<p><code>token_type</code>：令牌类型，值固定为：<code>Bearer</code></p>
+</li>
+<li>
+<p><code>expires_in</code>：访问令牌的存活时间</p>
+</li>
+<li>
+<p><code>access_token</code>：访问令牌</p>
+</li>
+<li>
+<p><code>refresh_token</code>：刷新令牌，访问令牌过期后，使用刷新令牌重新获取</p>
+</li>
+</ul>
+<h4 id="使用-oauth2-server-实现">使用 oauth2-server 实现</h4>
+<h5 id="初始化">初始化</h5>
+<p>OAuth2.0 只是协议，在实现上需要联系到用户与数据库存储，oauth2-server 的新版本并没有指定某种数据库，但它提供了 <a href="#Interfaces">Interfaces</a> 与 <a href="#Traits">Traits</a> 帮助我们实现，这让我们可以方便的使用任何形式的数据存储方式，这种方便的代价就是需要我们自行创建 <a href="#Repositories">Repositories</a> 与 <a href="#Entities">Entities</a>。</p>
+<h5 id="初始化-server">初始化 server</h5>
+<pre><code>// 初始化存储库
+$clientRepository = new ClientRepository(); // Interface: ClientRepositoryInterface
+$scopeRepository = new ScopeRepository(); // Interface: ScopeRepositoryInterface
+$accessTokenRepository = new AccessTokenRepository(); // Interface: AccessTokenRepositoryInterface
+$authCodeRepository = new AuthCodeRepository(); // Interface: AuthCodeRepositoryInterface
+$refreshTokenRepository = new RefreshTokenRepository(); // Interface: RefreshTokenRepositoryInterface
+$userRepository = new UserRepository(); //Interface: UserRepositoryInterface
+
+// 私钥与加密密钥
+$privateKey = 'file://path/to/private.key';
+//$privateKey = new CryptKey('file://path/to/private.key', 'passphrase'); // 如果私钥文件有密码
+$encryptionKey = 'lxZFUEsBCJ2Yb14IF2ygAHI5N4+ZAUXXaSeeJm6+twsUmIen'; // 加密密钥字符串
+// $encryptionKey = Key::loadFromAsciiSafeString($encryptionKey); //如果通过 generate-defuse-key 脚本生成的字符串，可使用此方法传入
+
+// 初始化 server
+$server = new \League\OAuth2\Server\AuthorizationServer(
+    $clientRepository,
+    $accessTokenRepository,
+    $scopeRepository,
+    $privateKey,
+    $encryptionKey
+);
+</code></pre>
+<h5 id="初始化授权码类型">初始化授权码类型</h5>
+<pre><code>// 授权码授权类型初始化
+$grant = new \League\OAuth2\Server\Grant\AuthCodeGrant(
+    $authCodeRepository,
+    $refreshTokenRepository,
+    new \DateInterval('PT10M') // 设置授权码过期时间为10分钟
+);
+$grant-&gt;setRefreshTokenTTL(new \DateInterval('P1M')); // 设置刷新令牌过期时间1个月
+
+// 将授权码授权类型添加进 server
+$server-&gt;enableGrantType(
+    $grant,
+    new \DateInterval('PT1H') // 设置访问令牌过期时间1小时
+);
+</code></pre>
+<p><em><a href="http://php.net/manual/zh/class.dateinterval.php">DateInterval</a></em></p>
+<h5 id="使用">使用</h5>
+<p><em>注意：这里的示例演示的是 Slim Framework 的用法，Slim 不是这个库的必要条件，只需要请求与响应符合<a href="https://www.php-fig.org/psr/psr-7/">PSR-7</a>规范即可。</em></p>
+<p>用户向客户端提出 OAuth 登录请求，客户端将用户重定向授权服务器的地址（例如：https://example.com/authorize?response_type=code&amp;client_id={client_id}&amp;redirect_uri={redirect_uri}&amp;scope{scope}&amp;state={state})：</p>
+<pre><code>$app-&gt;get('/authorize', function (ServerRequestInterface $request, ResponseInterface $response) use ($server) {
+   
+    try {
+        // 验证 HTTP 请求，并返回 authRequest 对象
+        $authRequest = $server-&gt;validateAuthorizationRequest($request);
+        // 此时应将 authRequest 对象序列化后存在当前会话(session)中
+        $_SESSION['authRequest'] = serialize($authRequest);
+        // 然后将用户重定向至登录入口或在当前地址直接响应登录页面
+        return $response-&gt;getBody()-&gt;write(file_get_contents(&quot;login.html&quot;));
+        
+    } catch (OAuthServerException $exception) {
+        // 可以捕获 OAuthServerException，将其转为 HTTP 响应
+        return $exception-&gt;generateHttpResponse($response);
+        
+    } catch (\Exception $exception) {
+    	// 其他异常
+        $body = new Stream(fopen('php://temp', 'r+'));
+        $body-&gt;write($exception-&gt;getMessage());
+        return $response-&gt;withStatus(500)-&gt;withBody($body);
+        
+    }
+});
+</code></pre>
+<p>此时展示给用户的是这样的页面：<br>
+<img src="https://image.baidu.com/search/down?url=https://tva1.sinaimg.cn/large/006y8mN6ly1g85wd9vzqsj30yg0ke0wc.jpg" alt="qq-oauth.png" loading="lazy"></p>
+<p>用户提交登录后，设置好用户实体(userEntity)：</p>
+<pre><code>$app-&gt;post('/login', function (ServerRequestInterface $request, ResponseInterface $response) use ($server) {
+    try {
+        // 在会话(session)中取出 authRequest 对象
+        $authRequest = unserialize($_SESSION['authRequest']);
+        // 设置用户实体(userEntity)
+        $authRequest-&gt;setUser(new UserEntity(1));
+        // 设置权限范围
+        $authRequest-&gt;setScopes(['basic'])
+        // true = 批准，false = 拒绝
+        $authRequest-&gt;setAuthorizationApproved(true);
+        // 完成后重定向至客户端请求重定向地址
+	    return $server-&gt;completeAuthorizationRequest($authRequest, $response);
+    } catch (OAuthServerException $exception) {
+        // 可以捕获 OAuthServerException，将其转为 HTTP 响应
+        return $exception-&gt;generateHttpResponse($response);
+    } catch (\Exception $exception) {
+        // 其他异常
+        $body = new Stream(fopen('php://temp', 'r+'));
+        $body-&gt;write($exception-&gt;getMessage());
+        return $response-&gt;withStatus(500)-&gt;withBody($body);
+    }
+});
+</code></pre>
+<p>客户端通过授权码请求访问令牌：</p>
+<pre><code>$app-&gt;post('/access_token', function (ServerRequestInterface $request, ResponseInterface $response) use ($server) {
+
+    try {
+        // 这里只需要这一行就可以，具体的判断在 Repositories 中
+        return $server-&gt;respondToAccessTokenRequest($request, $response);
+    } catch (\League\OAuth2\Server\Exception\OAuthServerException $exception) {
+        return $exception-&gt;generateHttpResponse($response);
+    } catch (\Exception $exception) {
+        $body = new Stream(fopen('php://temp', 'r+'));
+        $body-&gt;write($exception-&gt;getMessage());
+        return $response-&gt;withStatus(500)-&gt;withBody($body);
+    }
+});
+</code></pre>
+<h2 id="隐式授权模式">隐式授权模式</h2>
+<p>隐式授权相当于是授权码模式的简化版本：</p>
+<h4 id="流程用户可见">流程(用户可见)</h4>
+<p>用户访问客户端，客户端将用户导向授权服务器时，将以下参数通过 <code>GET query</code> 传入：</p>
+<ul>
+<li><code>response_type</code>：授权类型，必选项，值固定为：<code>token</code></li>
+<li><code>client_id</code>：客户端ID，必选项</li>
+<li><code>redirect_uri</code>：重定向URI，可选项，不填写时默认预先注册的重定向URI</li>
+<li><code>scope</code>：权限范围，可选项，以空格分隔</li>
+<li><code>state</code>：<a href="https://zh.wikipedia.org/wiki/%E8%B7%A8%E7%AB%99%E8%AF%B7%E6%B1%82%E4%BC%AA%E9%80%A0">CSRF</a>令牌，可选项，但强烈建议使用，应将该值存储与用户会话中，以便在返回时验证</li>
+</ul>
+<p>用户选择是否给予客户端授权</p>
+<p>假设用户给予授权，授权服务器将用户导向客户端事先指定的 <code>redirect_uri</code>，并将以下参数通过 <code>GET query</code> 传入：</p>
+<ul>
+<li><code>token_type</code>：令牌类型，值固定为：<code>Bearer</code></li>
+<li><code>expires_in</code>：访问令牌的存活时间</li>
+<li><code>access_token</code>：访问令牌</li>
+<li><code>state</code>：请求中发送的 <code>state</code>，原样返回。客户端将此值与用户会话中的值进行对比，以确保授权码响应的是此应用程序而非其他应用程序</li>
+</ul>
+<p>整个流程与授权码模式的第一部分类似，只是授权服务器直接响应了访问令牌，跳过了授权码的步骤。它适用于没有服务器，完全运行在前端的应用程序。</p>
+<p><em>此模式下没有刷新令牌(refresh token)的返回。</em></p>
+<h4 id="使用-oauth2-server-实现-2">使用 oauth2-server 实现</h4>
+<p><strong><a href="#%E5%88%9D%E5%A7%8B%E5%8C%96">初始化 server</a></strong></p>
+<h5 id="初始化授权码类型-2">初始化授权码类型</h5>
+<pre><code>// 将隐式授权类型添加进 server
+$server-&gt;enableGrantType(
+    new ImplicitGrant(new \DateInterval('PT1H')),
+    new \DateInterval('PT1H') // 设置访问令牌过期时间1小时
+);
+</code></pre>
+<p><em><a href="http://php.net/manual/zh/class.dateinterval.php">DateInterval</a></em></p>
+<h5 id="使用-2">使用</h5>
+<p><em>注意：这里的示例演示的是 Slim Framework 的用法，Slim 不是这个库的必要条件，只需要请求与响应符合<a href="https://www.php-fig.org/psr/psr-7/">PSR-7</a>规范即可。</em></p>
+<pre><code>$app-&gt;post('/login', function (ServerRequestInterface $request, ResponseInterface $response) use ($server) {
+    try {
+        // 在会话(session)中取出 authRequest 对象
+        $authRequest = unserialize($_SESSION['authRequest']);
+        // 设置用户实体(userEntity)
+        $authRequest-&gt;setUser(new UserEntity(1));
+        // 设置权限范围
+        $authRequest-&gt;setScopes(['basic'])
+        // true = 批准，false = 拒绝
+        $authRequest-&gt;setAuthorizationApproved(true);
+        // 完成后重定向至客户端请求重定向地址
+	    return $server-&gt;completeAuthorizationRequest($authRequest, $response);
+    } catch (OAuthServerException $exception) {
+        // 可以捕获 OAuthServerException，将其转为 HTTP 响应
+        return $exception-&gt;generateHttpResponse($response);
+    } catch (\Exception $exception) {
+        // 其他异常
+        $body = new Stream(fopen('php://temp', 'r+'));
+        $body-&gt;write($exception-&gt;getMessage());
+        return $response-&gt;withStatus(500)-&gt;withBody($body);
+    }
+});
+</code></pre>
+<p>此时展示给用户的是这样的页面：<br>
+<img src="https://image.baidu.com/search/down?url=https://tva1.sinaimg.cn/large/006y8mN6ly1g85wde8ypgj30yg0ke0wc.jpg" alt="qq-oauth.png" loading="lazy"></p>
+<p>用户提交登录后，设置好用户实体(userEntity)：</p>
+<pre><code>$app-&gt;post('/login', function (ServerRequestInterface $request, ResponseInterface $response) use ($server) {
+   
+    try {
+	      // 在会话(session)中取出 authRequest 对象
+        $authRequest = unserialize($_SESSION['authRequest']);
+				// 设置用户实体(userEntity)
+		    $authRequest-&gt;setUser(new UserEntity(1));
+				// 设置权限范围
+				$authRequest-&gt;setScopes(['basic'])
+				// true = 批准，false = 拒绝
+		    $authRequest-&gt;setAuthorizationApproved(true);
+				// 完成后重定向至客户端请求重定向地址
+		    return $server-&gt;completeAuthorizationRequest($authRequest, $response);
+    } catch (OAuthServerException $exception) {
+        // 可以捕获 OAuthServerException，将其转为 HTTP 响应
+        return $exception-&gt;generateHttpResponse($response);
+    } catch (\Exception $exception) {
+    	// 其他异常
+        $body = new Stream(fopen('php://temp', 'r+'));
+        $body-&gt;write($exception-&gt;getMessage());
+        return $response-&gt;withStatus(500)-&gt;withBody($body);
+    }
+});
+</code></pre>
+<h2 id="密码模式">密码模式</h2>
+<p>密码模式是由用户提供给客户端账号密码来获取访问令牌，这属于危险行为，所以此模式只适用于高度信任的客户端（例如第一方应用程序）。客户端不应存储用户的账号密码。</p>
+<p><em>OAuth2 协议规定此模式不需要传 <code>client_id</code> &amp; <code>client_secret</code>，但 oauth-server 库需要</em></p>
+<h4 id="流程-2">流程</h4>
+<p>客户端要求用户提供授权凭据，通常是账号密码</p>
+<p>然后，客户端发送 <code>POST</code> 请求至授权服务器，携带以下参数：</p>
+<ul>
+<li><code>grant_type</code>：授权类型，必选项，值固定为：<code>password</code></li>
+<li><code>client_id</code>：客户端ID，必选项</li>
+<li><code>client_secret</code>：客户端 secret</li>
+<li><code>scope</code>：权限范围，可选项，以空格分隔</li>
+<li><code>username</code>：用户账号</li>
+<li><code>password</code>：用户密码</li>
+</ul>
+<p>授权服务器响应以下内容：</p>
+<ul>
+<li><code>token_type</code>：令牌类型，值固定为：<code>Bearer</code></li>
+<li><code>expires_in</code>：访问令牌的存活时间</li>
+<li><code>access_token</code>：访问令牌</li>
+<li><code>refresh_token</code>：刷新令牌，访问令牌过期后，使用刷新令牌重新获取</li>
+</ul>
+<h4 id="使用-oauth2-server-实现-3">使用 oauth2-server 实现</h4>
+<p><strong><a href="#%E5%88%9D%E5%A7%8B%E5%8C%96">初始化 server</a></strong></p>
+<h5 id="初始化授权码类型-3">初始化授权码类型</h5>
+<pre><code>$grant = new \League\OAuth2\Server\Grant\PasswordGrant(
+     $userRepository,
+     $refreshTokenRepository
+);
+
+$grant-&gt;setRefreshTokenTTL(new \DateInterval('P1M')); // 设置刷新令牌过期时间1个月
+
+// 将密码授权类型添加进 server
+$server-&gt;enableGrantType(
+    $grant,
+    new \DateInterval('PT1H') // 设置访问令牌过期时间1小时
+);
+</code></pre>
+<p><em><a href="http://php.net/manual/zh/class.dateinterval.php">DateInterval</a></em></p>
+<h5 id="使用-3">使用</h5>
+<p><em>注意：这里的示例演示的是 Slim Framework 的用法，Slim 不是这个库的必要条件，只需要请求与响应符合<a href="https://www.php-fig.org/psr/psr-7/">PSR-7</a>规范即可。</em></p>
+<pre><code>$app-&gt;post('/access_token', function (ServerRequestInterface $request, ResponseInterface $response) use ($server) {
+
+    try {
+        // 这里只需要这一行就可以，具体的判断在 Repositories 中
+        return $server-&gt;respondToAccessTokenRequest($request, $response);
+    } catch (\League\OAuth2\Server\Exception\OAuthServerException $exception) {
+        return $exception-&gt;generateHttpResponse($response);
+    } catch (\Exception $exception) {
+        $body = new Stream(fopen('php://temp', 'r+'));
+        $body-&gt;write($exception-&gt;getMessage());
+        return $response-&gt;withStatus(500)-&gt;withBody($body);
+    }
+});
+</code></pre>
+<h2 id="客户端模式">客户端模式</h2>
+<p>客户端模式是指以客户端的名义，而不是用户的名义，向授权服务器获取认证。在这个模式下，用户与授权服务器不产生关系，用户只能感知到的客户端，所产生的资源也都由客户端处理。</p>
+<h4 id="流程-3">流程</h4>
+<p>客户端发送 <code>POST</code> 请求至授权服务器，携带以下参数：</p>
+<ul>
+<li><code>grant_type</code>：授权类型，必选项，值固定为：<code>client_credentials</code></li>
+<li><code>client_id</code>：客户端ID，必选项</li>
+<li><code>client_secret</code>：客户端 secret</li>
+<li><code>scope</code>：权限范围，可选项，以空格分隔</li>
+</ul>
+<p>授权服务器响应以下内容：</p>
+<ul>
+<li><code>token_type</code>：令牌类型，值固定为：<code>Bearer</code></li>
+<li><code>expires_in</code>：访问令牌的存活时间</li>
+<li><code>access_token</code>：访问令牌</li>
+</ul>
+<p><em>此模式下无需刷新令牌(refresh token)的返回。</em></p>
+<h4 id="使用-oauth2-server-实现-4">使用 oauth2-server 实现</h4>
+<p><strong><a href="#%E5%88%9D%E5%A7%8B%E5%8C%96">初始化 server</a></strong></p>
+<h5 id="初始化授权码类型-4">初始化授权码类型</h5>
+<pre><code>// 将客户端授权类型添加进 server
+$server-&gt;enableGrantType(
+    new \League\OAuth2\Server\Grant\ClientCredentialsGrant(),
+    new \DateInterval('PT1H') // 设置访问令牌过期时间1小时
+);
+</code></pre>
+<p><em><a href="http://php.net/manual/zh/class.dateinterval.php">DateInterval</a></em></p>
+<h5 id="使用-4">使用</h5>
+<p><em>注意：这里的示例演示的是 Slim Framework 的用法，Slim 不是这个库的必要条件，只需要请求与响应符合<a href="https://www.php-fig.org/psr/psr-7/">PSR-7</a>规范即可。</em></p>
+<pre><code class="language-php">$app-&gt;post('/access_token', function (ServerRequestInterface $request, ResponseInterface $response) use ($server) {
+
+    try {
+        // 这里只需要这一行就可以，具体的判断在 Repositories 中
+        return $server-&gt;respondToAccessTokenRequest($request, $response);
+    } catch (\League\OAuth2\Server\Exception\OAuthServerException $exception) {
+        return $exception-&gt;generateHttpResponse($response);
+    } catch (\Exception $exception) {
+        $body = new Stream(fopen('php://temp', 'r+'));
+        $body-&gt;write($exception-&gt;getMessage());
+        return $response-&gt;withStatus(500)-&gt;withBody($body);
+    }
+});
+</code></pre>
+<h2 id="刷新访问令牌access-token">刷新访问令牌(access token)</h2>
+<p>访问令牌有一个较短的存活时间，在过期后，客户端通过刷新令牌来获得新的访问令牌与刷新令牌。当用户长时间不活跃，刷新令牌也过期后，就需要重新获取授权。</p>
+<h4 id="流程-4">流程</h4>
+<p>客户端发送 <code>POST</code> 请求至授权服务器，携带以下参数：</p>
+<ul>
+<li><code>grant_type</code>：授权类型，必选项，值固定为：<code>refresh_token</code></li>
+<li><code>client_id</code>：客户端ID，必选项</li>
+<li><code>client_secret</code>：客户端 secret</li>
+<li><code>scope</code>：权限范围，可选项，以空格分隔</li>
+<li><code>refresh_token</code>：刷新令牌</li>
+</ul>
+<p>授权服务器响应以下内容：</p>
+<ul>
+<li><code>token_type</code>：令牌类型，值固定为：<code>Bearer</code></li>
+<li><code>expires_in</code>：访问令牌的存活时间</li>
+<li><code>access_token</code>：访问令牌</li>
+<li><code>refresh_token</code>：刷新令牌，访问令牌过期后，使用刷新令牌重新获取</li>
+</ul>
+<h4 id="使用-oauth2-server-实现-5">使用 oauth2-server 实现</h4>
+<p><strong><a href="#%E5%88%9D%E5%A7%8B%E5%8C%96">初始化 server</a></strong></p>
+<h5 id="初始化授权码类型-5">初始化授权码类型</h5>
+<pre><code class="language-php">$grant = new \League\OAuth2\Server\Grant\RefreshTokenGrant($refreshTokenRepository);
+$grant-&gt;setRefreshTokenTTL(new \DateInterval('P1M')); // 新的刷新令牌过期时间1个月
+
+// 将刷新访问令牌添加进 server
+$server-&gt;enableGrantType(
+    $grant,
+    new \DateInterval('PT1H') // 新的访问令牌过期时间1小时
+);
+</code></pre>
+<p><em><a href="http://php.net/manual/zh/class.dateinterval.php">DateInterval</a></em></p>
+<h5 id="使用-5">使用</h5>
+<pre><code class="language-php">$app-&gt;post('/access_token', function (ServerRequestInterface $request, ResponseInterface $response) use ($server) {
+
+    try {
+        // 这里只需要这一行就可以，具体的判断在 Repositories 中
+        return $server-&gt;respondToAccessTokenRequest($request, $response);
+    } catch (\League\OAuth2\Server\Exception\OAuthServerException $exception) {
+        return $exception-&gt;generateHttpResponse($response);
+    } catch (\Exception $exception) {
+        $body = new Stream(fopen('php://temp', 'r+'));
+        $body-&gt;write($exception-&gt;getMessage());
+        return $response-&gt;withStatus(500)-&gt;withBody($body);
+    }
+});
+</code></pre>
+<h2 id="资源服务器验证访问令牌">资源服务器验证访问令牌</h2>
+<p>oauth2-server 为资源服务器提供了一个中间件用于验证访问令牌。</p>
+<p>客户端需要在 <code>HTTP Header</code> 中使用 <code>Authorization</code> 传入访问令牌，如果通过，中间件将会在 <code>request</code> 中加入对应数据：</p>
+<ul>
+<li><code>oauth_access_token_id</code>：访问令牌 id</li>
+<li><code>oauth_client_id</code>: 客户端id</li>
+<li><code>oauth_user_id</code>：用户id</li>
+<li><code>oauth_scopes</code>：权限范围</li>
+</ul>
+<p>授权不通过，则抛出 <code>OAuthServerException::accessDenied</code> 异常。</p>
+<pre><code class="language-php">// 初始化
+$accessTokenRepository = new AccessTokenRepository(); // Interface: AccessTokenRepositoryInterface
+
+// 授权服务器分发的公钥
+$publicKeyPath = 'file://path/to/public.key';
+        
+// 创建 ResourceServer
+$server = new \League\OAuth2\Server\ResourceServer(
+    $accessTokenRepository,
+    $publicKeyPath
+);
+
+// 中间件
+new \League\OAuth2\Server\Middleware\ResourceServerMiddleware($server);
+</code></pre>
+<p>如果所用路由不支持中间件，可自行实现，符合<a href="https://www.php-fig.org/psr/psr-7/">PSR-7</a>规范即可 ：</p>
+<pre><code class="language-php">try {
+	$request = $server-&gt;validateAuthenticatedRequest($request);
+} catch (OAuthServerException $exception) {
+	return $exception-&gt;generateHttpResponse($response);
+} catch (\Exception $exception) {
+	return (new OAuthServerException($exception-&gt;getMessage(), 0, 'unknown_error', 500))-&gt;generateHttpResponse($response);
+}
+</code></pre>
+<h2 id="oauth2-server-实现">oauth2-server 实现</h2>
+<p>oauth2-server 的实现需要我们手动创建 <a href="#Repositories">Repositories</a> 与 <a href="#Entities">Entities</a>，下面展示一个项目目录示例：</p>
+<pre><code>- Entities
+	- AccessTokenEntity.php
+	- AuthCodeEntity.php
+	- ClientEntity.php
+	- RefreshTokenEntity.php
+	- ScopeEntity.php
+	- UserEntity.php
+- Repositories
+	- AccessTokenRepository.php
+	- AuthCodeRepository.php
+	- ClientRepository.php
+	- RefreshTokenRepository.php
+	- ScopeRepository.php
+	- UserRepository.php
+</code></pre>
+<h3 id="repositories">Repositories</h3>
+<p>Repositories 里主要是处理关于授权码、访问令牌等数据的存储逻辑，oauth2-server 提供了 <a href="#Interfaces">Interfaces</a> 来定义所需要实现的方法。</p>
+<pre><code class="language-php">class AccessTokenRepository implements AccessTokenRepositoryInterface
+{
+    /**
+     * @return AccessTokenEntityInterface
+     */
+    public function getNewToken(ClientEntityInterface $clientEntity, array $scopes, $userIdentifier = null)
+    {
+        // 创建新访问令牌时调用方法
+        // 需要返回 AccessTokenEntityInterface 对象
+        // 需要在返回前，向 AccessTokenEntity 传入参数中对应属性
+        // 示例代码：
+        $accessToken = new AccessTokenEntity();
+        $accessToken-&gt;setClient($clientEntity);
+        foreach ($scopes as $scope) {
+            $accessToken-&gt;addScope($scope);
+        }
+        $accessToken-&gt;setUserIdentifier($userIdentifier);
+
+        return $accessToken;
+    }
+
+    public function persistNewAccessToken(AccessTokenEntityInterface $accessTokenEntity)
+    {
+		// 创建新访问令牌时调用此方法
+        // 可以用于持久化存储访问令牌，持久化数据库自行选择
+        // 可以使用参数中的 AccessTokenEntityInterface 对象，获得有价值的信息：
+        // $accessTokenEntity-&gt;getIdentifier(); // 获得令牌唯一标识符
+        // $accessTokenEntity-&gt;getExpiryDateTime(); // 获得令牌过期时间
+        // $accessTokenEntity-&gt;getUserIdentifier(); // 获得用户标识符
+        // $accessTokenEntity-&gt;getScopes(); // 获得权限范围
+        // $accessTokenEntity-&gt;getClient()-&gt;getIdentifier(); // 获得客户端标识符
+    }
+
+    public function revokeAccessToken($tokenId)
+    {
+		// 使用刷新令牌创建新的访问令牌时调用此方法
+        // 参数为原访问令牌的唯一标识符
+        // 可将其在持久化存储中过期
+    }
+
+    public function isAccessTokenRevoked($tokenId)
+    {
+        // 资源服务器验证访问令牌时将调用此方法
+        // 用于验证访问令牌是否已被删除
+        // return true 已删除，false 未删除
+        return false;
+    }
+}
+</code></pre>
+<pre><code class="language-php">class AuthCodeRepository implements AuthCodeRepositoryInterface
+{
+    /**
+     * @return AuthCodeEntityInterface
+     */
+    public function getNewAuthCode()
+    {
+        // 创建新授权码时调用方法
+        // 需要返回 AuthCodeEntityInterface 对象
+        return new AuthCodeEntity();
+    }
+
+    public function persistNewAuthCode(AuthCodeEntityInterface $authCodeEntity)
+    {
+		// 创建新授权码时调用此方法
+        // 可以用于持久化存储授权码，持久化数据库自行选择
+        // 可以使用参数中的 AuthCodeEntityInterface 对象，获得有价值的信息：
+        // $authCodeEntity-&gt;getIdentifier(); // 获得授权码唯一标识符
+        // $authCodeEntity-&gt;getExpiryDateTime(); // 获得授权码过期时间
+        // $authCodeEntity-&gt;getUserIdentifier(); // 获得用户标识符
+        // $authCodeEntity-&gt;getScopes(); // 获得权限范围
+        // $authCodeEntity-&gt;getClient()-&gt;getIdentifier(); // 获得客户端标识符
+    }
+
+    public function revokeAuthCode($codeId)
+    {
+		// 当使用授权码获取访问令牌时调用此方法
+        // 可以在此时将授权码从持久化数据库中删除
+        // 参数为授权码唯一标识符
+    }
+
+    public function isAuthCodeRevoked($codeId)
+    {
+		// 当使用授权码获取访问令牌时调用此方法
+        // 用于验证授权码是否已被删除
+        // return true 已删除，false 未删除
+        return false;
+    }
+}
+</code></pre>
+<pre><code class="language-php">class ClientRepository implements ClientRepositoryInterface
+{
+    /**
+     * @return ClientEntityInterface
+     */
+    public function getClientEntity($clientIdentifier, $grantType = null, $clientSecret = null, $mustValidateSecret = true)
+    {
+        // 获取客户端对象时调用方法，用于验证客户端
+        // 需要返回 ClientEntityInterface 对象
+        // $clientIdentifier 客户端唯一标识符
+        // $grantType 代表授权类型，根据类型不同，验证方式也不同
+        // $clientSecret 代表客户端密钥，是客户端事先在授权服务器中注册时得到的
+        // $mustValidateSecret 代表是否需要验证客户端密钥
+        $client = new ClientEntity();
+        $client-&gt;setIdentifier($clientIdentifier);
+
+        return $client;
+    }
+}
+</code></pre>
+<pre><code class="language-php">class RefreshTokenRepository implements RefreshTokenRepositoryInterface
+{
+    /**
+     * @return RefreshTokenEntityInterface
+     */
+    public function getNewRefreshToken()
+    {
+        // 创建新授权码时调用方法
+        // 需要返回 RefreshTokenEntityInterface 对象
+        return new RefreshTokenEntity();
+    }
+
+    public function persistNewRefreshToken(RefreshTokenEntityInterface $refreshTokenEntity)
+    {
+		// 创建新刷新令牌时调用此方法
+        // 用于持久化存储授刷新令牌
+        // 可以使用参数中的 RefreshTokenEntityInterface 对象，获得有价值的信息：
+        // $refreshTokenEntity-&gt;getIdentifier(); // 获得刷新令牌唯一标识符
+        // $refreshTokenEntity-&gt;getExpiryDateTime(); // 获得刷新令牌过期时间
+        // $refreshTokenEntity-&gt;getAccessToken()-&gt;getIdentifier(); // 获得访问令牌标识符
+    }
+
+    public function revokeRefreshToken($tokenId)
+    {
+		// 当使用刷新令牌获取访问令牌时调用此方法
+        // 原刷新令牌将删除，创建新的刷新令牌
+        // 参数为原刷新令牌唯一标识
+        // 可在此删除原刷新令牌
+    }
+
+    public function isRefreshTokenRevoked($tokenId)
+    {
+        // 当使用刷新令牌获取访问令牌时调用此方法
+        // 用于验证刷新令牌是否已被删除
+        // return true 已删除，false 未删除
+        return false;
+    }
+}
+</code></pre>
+<pre><code class="language-php">class ScopeRepository implements ScopeRepositoryInterface
+{
+    /**
+     * @return ScopeEntityInterface
+     */
+    public function getScopeEntityByIdentifier($identifier)
+    {
+        // 验证权限是否在权限范围中会调用此方法
+        // 参数为单个权限标识符
+        // ......
+        // 验证成功则返回 ScopeEntityInterface 对象
+        $scope = new ScopeEntity();
+        $scope-&gt;setIdentifier($identifier);
+
+        return $scope;
+    }
+
+    public function finalizeScopes(
+        array $scopes,
+        $grantType,
+        ClientEntityInterface $clientEntity,
+        $userIdentifier = null
+    ) {
+        // 在创建授权码与访问令牌前会调用此方法
+        // 用于验证权限范围、授权类型、客户端、用户是否匹配
+        // 可整合进项目自身的权限控制中
+        // 必须返回 ScopeEntityInterface 对象可用的 scope 数组
+        // 示例：
+        // $scope = new ScopeEntity();
+        // $scope-&gt;setIdentifier('example');
+        // $scopes[] = $scope;
+
+        return $scopes;
+    }
+}
+</code></pre>
+<pre><code class="language-php">class UserRepository implements UserRepositoryInterface
+{
+    /**
+     * @return UserEntityInterface
+     */
+    public function getUserEntityByUserCredentials(
+        $username,
+        $password,
+        $grantType,
+        ClientEntityInterface $clientEntity
+    ) {
+        // 验证用户时调用此方法
+        // 用于验证用户信息是否符合
+        // 可以验证是否为用户可使用的授权类型($grantType)与客户端($clientEntity)
+        // 验证成功返回 UserEntityInterface 对象
+        $user = new UserEntity();
+        $user-&gt;setIdentifier(1);
+
+        return $user;
+    }
+}
+</code></pre>
+<h3 id="entities">Entities</h3>
+<p>Entities 里是 oauth2-server 处理授权与认证逻辑的类，它为我们提供了 <a href="#Interfaces">Interfaces</a> 来定义需要实现的方法，同时提供了 <a href="#Traits">Traits</a> 帮助我们实现，可以选择使用，有需要时也可以重写。</p>
+<pre><code class="language-php">class AccessTokenEntity implements AccessTokenEntityInterface
+{
+    use AccessTokenTrait, TokenEntityTrait, EntityTrait;
+}
+</code></pre>
+<pre><code class="language-php">class AuthCodeEntity implements AuthCodeEntityInterface
+{
+    use EntityTrait, TokenEntityTrait, AuthCodeTrait;
+}
+</code></pre>
+<pre><code class="language-php">class ClientEntity implements ClientEntityInterface
+{
+    use EntityTrait, ClientTrait;
+}
+</code></pre>
+<pre><code class="language-php">class RefreshTokenEntity implements RefreshTokenEntityInterface
+{
+    use RefreshTokenTrait, EntityTrait;
+}
+</code></pre>
+<pre><code class="language-php">class ScopeEntity implements ScopeEntityInterface
+{
+    use EntityTrait;
+	
+    // 没有 Trait 实现这个方法，需要自行实现
+    // oauth2-server 项目的测试代码的实现例子
+    public function jsonSerialize()
+    {
+        return $this-&gt;getIdentifier();
+    }
+}
+</code></pre>
+<pre><code class="language-php">class UserEntity implements UserEntityInterface
+{
+    use EntityTrait;
+}
+</code></pre>
+<h3 id="interfaces">Interfaces</h3>
+<p><strong>Repositories</strong></p>
+<ul>
+<li>
+<p>League\OAuth2\Server\Repositories\AccessTokenRepositoryInterface.php</p>
+</li>
+<li>
+<p>League\OAuth2\Server\Repositories\AuthCodeRepositoryInterface.php</p>
+</li>
+<li>
+<p>League\OAuth2\Server\Repositories\ClientRepositoryInterface.php</p>
+</li>
+<li>
+<p>League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface.php</p>
+</li>
+<li>
+<p>League\OAuth2\Server\Repositories\ScopeRepositoryInterface.php</p>
+</li>
+<li>
+<p>League\OAuth2\Server\Repositories\UserRepositoryInterface.php</p>
+</li>
+</ul>
+<p><strong>Entities</strong></p>
+<ul>
+<li>League\OAuth2\Server\Entities\AccessTokenEntityInterface.php</li>
+<li>League\OAuth2\Server\Entities\AuthCodeEntityInterface.php</li>
+<li>League\OAuth2\Server\Entities\ClientEntityInterface.php</li>
+<li>League\OAuth2\Server\Entities\RefreshTokenEntityInterface.php</li>
+<li>League\OAuth2\Server\Entities\ScopeEntityInterface.php</li>
+<li>League\OAuth2\Server\Entities\TokenInterface.php</li>
+<li>League\OAuth2\Server\Entities\UserEntityInterface.php</li>
+</ul>
+<h3 id="traits">Traits</h3>
+<ul>
+<li>League\OAuth2\Server\Entities\Traits\AccessTokenTrait.php</li>
+<li>League\OAuth2\Server\Entities\Traits\AuthCodeTrait.php</li>
+<li>League\OAuth2\Server\Entities\Traits\ClientTrait.php</li>
+<li>League\OAuth2\Server\Entities\Traits\EntityTrait.php</li>
+<li>League\OAuth2\Server\Entities\Traits\RefreshTokenTrait.php</li>
+<li>League\OAuth2\Server\Entities\Traits\ScopeTrait.php</li>
+<li>League\OAuth2\Server\Entities\Traits\TokenEntityTrait.php</li>
+</ul>
+<h2 id="事件">事件</h2>
+<p>oauth2-server 预设了一些事件，目前官方文档中只有两个，余下的可以在 RequestEvent.php 文件中查看。</p>
+<h5 id="clientauthenticationfailed">client.authentication.failed</h5>
+<pre><code class="language-php">$server-&gt;getEmitter()-&gt;addListener(
+    'client.authentication.failed',
+    function (\League\OAuth2\Server\RequestEvent $event) {
+        // do something
+    }
+);
+</code></pre>
+<p>客户端身份验证未通过时触发此事件。你可以在客户端尝试 <code>n</code> 次失败后禁止它一段时间内的再次尝试。</p>
+<h5 id="userauthenticationfailed">user.authentication.failed</h5>
+<pre><code class="language-php">$server-&gt;getEmitter()-&gt;addListener(
+    'user.authentication.failed',
+    function (\League\OAuth2\Server\RequestEvent $event) {
+        // do something
+    }
+);
+</code></pre>
+<p>用户身份验证未通过时触发此事件。你可以通过这里提醒用户重置密码，或尝试 <code>n</code> 次后禁止用户再次尝试。</p>
+<h2 id="参考文章">参考文章</h2>
+<p>《oauth2-server 官方文档》(https://oauth2.thephpleague.com/)</p>
+<p>《理解OAuth 2.0》-阮一峰（http://www.ruanyifeng.com/blog/2014/05/oauth_2_0.html）</p>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/RqAiYOZyw/" class="tag">
+                    oauth
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/Iv0mMl-VfV/" class="tag">
+                    php
+                  </a>
+                
+              </div>
+            
+            
+              <div class="next-post">
+                <div class="next">下一篇</div>
+                <a href="https://cnbailian.github.io/post/session-and-JWT/">
+                  <h3 class="post-title">
+                    Session 与 JWT
+                  </h3>
+                </a>
+              </div>
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

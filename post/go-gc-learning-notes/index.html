@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>Go GC 学习笔记 | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="本文用于持续记录 Go GC 相关技术学习笔记。
+
+基础概念
+垃圾回收
+GC，全称 Garbage Collection，即垃圾回收，是一种自动内存管理机制。
+当程序向操作系统申请的内存不再需要时，垃圾回收主动将其回收并供其他代码进行内存申..." />
+    <meta name="keywords" content="Go语言学习笔记,go" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">Go GC 学习笔记</h2>
+            <div class="post-date">2021-02-19</div>
+            
+            <div class="post-content" v-pre>
+              <p>本文用于持续记录 Go GC 相关技术学习笔记。</p>
+<!--more-->
+<h2 id="基础概念">基础概念</h2>
+<h3 id="垃圾回收">垃圾回收</h3>
+<p><code>GC</code>，全称 <code>Garbage Collection</code>，即垃圾回收，是一种自动内存管理机制。</p>
+<p>当程序向操作系统申请的内存不再需要时，垃圾回收主动将其回收并供其他代码进行内存申请时候复用，或者将其归还给操作系统，这种针对内存级别资源的自动回收过程，即为垃圾回收。而负责垃圾回收的程序组件，即为垃圾回收器。</p>
+<p>通常，垃圾回收器的执行过程被划分为两个半独立的组件：</p>
+<ul>
+<li><strong>赋值器（Mutator）</strong>：Mutator 这个词是 Dijkstra 提出来的，意思是改变某个东西。Mutator 改变的是 GC 对象的引用关系，这一名称的本质是在指用户态的代码。Mutator 在执行过程中会生成对象和更新指针，随着这些操作的进行，对象间的引用关系也会“改变”。在这个过程中就会产生垃圾。</li>
+<li><strong>回收器（Collection）</strong>：负责执行垃圾回收的代码。</li>
+</ul>
+<h3 id="gc-算法">GC 算法</h3>
+<p>所有的 GC 算法其存在形式可以归结为追踪（Tracing）和引用计数（Reference Counting）这两种形式的混合运用。</p>
+<ul>
+<li><strong>追踪</strong>：从根对象出发，根据对象之间的引用信息，一步步推进直到扫描完毕整个堆并确定需要保留的对象，从而回收所有可回收的对象。</li>
+<li><strong>引用计数</strong>：每个对象自身包含一个被引用的计数器，当计数器归零时自动得到回收。</li>
+</ul>
+<h3 id="对象">对象</h3>
+<p>在 GC 中，对象指的是“通过应用程序利用的数据的集合”。对象配置在内存空间里，GC 根据情况将配置好的对象进行移动或销毁操作。在 Go 语言中，内存分配器根据申请大小将对象分为小对象、大对象两种，小对象也从8K至32K分为约70多类。[[Go 内存分配器]]</p>
+<h5 id="todo不知道-go-中-gc-的对象是否是指的这个">TODO：不知道 Go 中 GC 的对象是否是指的这个。</h5>
+<p>对象是 GC 的基本单位，一般由头（header）和域（field）组成。</p>
+<ul>
+<li><strong>头</strong>：保存对象本身的信息，对象的大小、种类、标记等。</li>
+<li><strong>域</strong>：对象使用者可访问的部分。域中的数据类型分为指针和非指针，GC 是根据对象的指针去搜寻其他对象的。</li>
+</ul>
+<h4 id="根对象">根对象</h4>
+<p>根对象是垃圾回收器在标记过程时最先检查的对象，包括：</p>
+<ol>
+<li>全局变量：程序在编译期就能确定的那些存在于程序整个声明周期的变量。</li>
+<li>执行栈：每个 goroutine 都包含自己的执行栈，这些执行栈上包含栈上的变量以及指向分配的堆内存区块的指针。</li>
+<li>寄存器：寄存器的值可能表示一个指针，参与计算的这些指针可能指向某些赋值器分配的堆内存区块。</li>
+</ol>
+<h3 id="stw">STW</h3>
+<p><code>STW</code> 可以是 <code>Stop the world</code> 的缩写，也可以是 <code>Start the world</code> 的缩写。通常意义上指代从 <code>Stop the world</code> 这一动作发生时直到 <code>Start the world</code> 这一动作发生时这一段时间间隔。</p>
+<p><code>STW</code> 是在垃圾回收过程中为了确保程序的正确性而不可避免的需要停止赋值器（Mutator）操作的一段过程。当我们谈论一个垃圾回收程序的正确性时， 实际上是在描述用户态代码必须保障回收器不会将存活的对象进行回收， 而回收器也必须保证赋值器能够正确的访问到已经被重新整理和移动的对象。</p>
+<h2 id="三色标记法">三色标记法</h2>
+<p>标记清除（Mark-Sweep）算法是最传统的追踪式垃圾回收算法，其执行过程可以分成标记（Mark）和清除（Sweep）两个阶段。标记阶段时，GC 从根对象出发，将所有可达对象标记成存活；标记阶段结束后，GC 会将所有不可达的对象清除。整个过程需要标记对象的存活状态，赋值器在 GC 过程中也不能执行，这就会造成长时间的 STW。</p>
+<p>为了解决原始标记清除算法带来的长时间 STW 问题，多数现代的追踪式 GC 都会采用三色标记法的变种以缩短 STW 的时间。</p>
+<h3 id="三色抽象">三色抽象</h3>
+<p>从垃圾回收器的视角来看，三色抽象规定了三种不同类型的对象，并用不同的颜色相称：</p>
+<ul>
+<li>白色对象：未被回收器访问到的对象。在回收开始阶段，所有对象均为白色，当标记结束后，所有白色对象均不可达。</li>
+<li>灰色对象：已被回收器访问到的对象，但回收器需要对其中的指针进行扫描，因为它们可能还指向白色对象。</li>
+<li>黑色对象：已被回收器访问到的对象，其中所有字段都已被扫描，黑色对象中的任何一个指针都不可能直接指向白色对象。</li>
+</ul>
+<p>当垃圾回收开始时，只有白色对象。随着标记过程开始进行，灰色对象开始出现（着色），当一个对象的所有子节点均扫描完成时，会被着色为黑色。当整个堆遍历完成时，只剩下黑色和白色对象，这时的黑色对象为可达对象，即存活对象；而白色对象为不可达对象，即垃圾对象。这个过程可以视为以灰色对象为波面，将黑色对象和白色对象分离，使波面不断向前推进，直到所有可达的灰色对象都变为黑色对象为止的过程。</p>
+<p>但只有三色抽象是不可以并发或者增量执行的，在执行过程中，赋值器仍然可能改变对象导致标记出错，它仍然需要 STW。所以三色标记需要搭配屏障技术来一起使用。</p>
+<h3 id="写屏障技术">写屏障技术</h3>
+<p>屏障技术指的是内存屏障（Memory Barrier）。它保障了代码描述中对内存的操作顺序<strong>既不会再编译期被编译器进行调整，也不会在运行时被 CPU 的乱序执行所打乱</strong>。</p>
+<p>要讲清楚写屏障，就需要理解三色标记清除算法中的<strong>强弱不变性</strong>。作为内存屏障的一种，**写屏障（Write Barrier）**是一个在并发垃圾回收器中才会出现的概念。垃圾回收器的正确性体现在：<strong>不应出现对象的丢失，也不应错误的回收还不需要回收的对象。</strong></p>
+<p>可以证明，当以下两个条件同时满足时会破坏垃圾回收器的正确性：</p>
+<ul>
+<li><strong>条件 1</strong>：赋值器修改对象，导致某一黑色对象引用白色对象。</li>
+<li><strong>条件 2</strong>：从灰色对象出发，到达白色对象、未经访问过的路径被赋值器破坏。</li>
+</ul>
+<p>我们将三色不变性所定义的波面根据这两个条件进行削弱：</p>
+<ul>
+<li>当满足原有三色不变性定义，也就是上述两个条件都不满足的情况称为<strong>强三色不变性（strong tricolor invariant)</strong>。</li>
+<li>当赋值器令黑色对象引用白色对象（满足条件 1 时）的情况称为<strong>弱三色不变性（weak tricolor invariant）</strong>。</li>
+</ul>
+<p>当赋值器进一步破坏灰色对象到达白色对象路径时（满足条件 2 时），即打破弱三色不变性，也就破坏了回收器的正确性。弱三色不变形的好处在于：<strong>只要存在未访问的能够到达白色对象的路径，就可以将黑色对象指向白色对象。</strong></p>
+<h4 id="dijkstra-插入屏障">Dijkstra 插入屏障</h4>
+<p><strong>插入屏障（insertion barrier）技术</strong>。 其核心思想是把赋值器对已存活的对象集合的插入行为通知给回收器，进而产生可能需要额外（重新）扫描的对象。 如果某一对象的引用被插入到已经被标记为黑色的对象中，这类屏障会<strong>保守地</strong>将其作为非白色存活对象， 以满足强三色不变性。</p>
+<h4 id="yuasa-删除屏障">Yuasa 删除屏障</h4>
+<p><strong>删除屏障（deletion barrier）技术</strong>。 其思想是当赋值器从灰色或白色对象中删除白色指针时，通过写屏障将这一行为通知给并发执行的回收器，这类屏障会<strong>保守地</strong>将其删除的对象染为灰色对象，以满足条件 2。</p>
+<h4 id="混合写屏障">混合写屏障</h4>
+<p>插入和删除屏障都不会在栈上的指针操作中生效，所以需要 STW 来扫描栈对象，区别在于插入屏障是标记结束后扫描，删除屏障是标记开始时扫描。</p>
+<p>Go 在 1.8 的时候为了简化 GC 的流程，同时减少标记终止阶段的重扫成本，将 Dijkstra 插入屏障和 Yuasa 删除屏障进行混合，形成混合写屏障。该屏障提出时的基本思想是：<strong>对正在被覆盖的对象进行着色，且如果当前栈未扫描完成，则同样对指针进行着色。</strong></p>
+<p>为了移除栈的重扫描过程，除了引入混合写屏障之外，在垃圾收集的标记阶段，我们还需要<strong>将创建的所有新对象都标记成黑色</strong>，防止新分配的栈内存和堆内存中的对象被错误地回收，因为栈内存在标记阶段最终都会变为黑色，所以不再需要重新扫描栈空间。</p>
+<h3 id="垃圾回收步骤">垃圾回收步骤</h3>
+<ol>
+<li>清理终止阶段；
+<ol>
+<li><strong>暂停程序</strong>，所有的处理器在这时会进入安全点（Safe point）；</li>
+<li>如果当前垃圾收集循环是强制触发的，我们还需要处理还未被清理的内存管理单元；</li>
+</ol>
+</li>
+<li>标记阶段；
+<ol>
+<li>将状态切换至 <code>_GCmark</code>、开启写屏障、用户程序协助（Mutator Assiste）并将根对象入队；</li>
+<li>恢复执行程序，标记进程和用于协助的用户程序会开始并发标记内存中的对象，写屏障会将被覆盖的指针和新指针都标记成灰色，而所有新创建的对象都会被直接标记成黑色；</li>
+<li>开始扫描根对象，包括所有 Goroutine 的栈、全局对象以及不在堆中的运行时数据结构，扫描 Goroutine 栈期间会暂停当前处理器；</li>
+<li>依次处理灰色队列中的对象，将对象标记成黑色并将它们指向的对象标记成灰色；</li>
+<li>使用分布式的终止算法检查剩余的工作，发现标记阶段完成后进入标记终止阶段；</li>
+</ol>
+</li>
+<li>标记终止阶段；
+<ol>
+<li><strong>暂停程序</strong>、将状态切换至 <code>_GCmarktermination</code> 并关闭辅助标记的用户程序；</li>
+<li>清理处理器上的线程缓存；</li>
+</ol>
+</li>
+<li>清理阶段；
+<ol>
+<li>将状态切换至 <code>_GCoff</code> 开始清理阶段，初始化清理状态并关闭写屏障；</li>
+<li>恢复用户程序，所有新创建的对象会标记成白色；</li>
+<li>后台并发清理所有的内存管理单元，当 Goroutine 申请新的内存管理单元时就会触发清理；</li>
+</ol>
+</li>
+</ol>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/Oj_Hy57cD/" class="tag">
+                    Go语言学习笔记
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/aa1vxy4S8/" class="tag">
+                    go
+                  </a>
+                
+              </div>
+            
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

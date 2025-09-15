@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>Go 汇编基础学习笔记 | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="本文用于持续记录 Go 语言汇编基础学习笔记。
+
+Go 汇编基础
+Plan9 指令集
+栈调整
+Go 编译器不会生成任何 PUSH/POP 族的指令: 栈的增长和收缩是通过在栈指针寄存器 SP 上分别执行减法和加法指令来实现的。
+SUBQ $..." />
+    <meta name="keywords" content="Go语言学习笔记,go" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">Go 汇编基础学习笔记</h2>
+            <div class="post-date">2021-01-22</div>
+            
+            <div class="post-content" v-pre>
+              <p>本文用于持续记录 Go 语言汇编基础学习笔记。</p>
+<!--more-->
+<h2 id="go-汇编基础">Go 汇编基础</h2>
+<h3 id="plan9-指令集">Plan9 指令集</h3>
+<h4 id="栈调整">栈调整</h4>
+<p>Go 编译器不会生成任何 PUSH/POP 族的指令: 栈的增长和收缩是通过在栈指针寄存器 <code>SP</code> 上分别执行减法和加法指令来实现的。</p>
+<pre><code class="language-assembly">SUBQ $0x18, SP # 对 SP 做减法，为函数分配函数栈帧
+...            # 省略无用代码
+ADDQ $0x18, SP # 对 SP 做加法，清除函数栈帧
+</code></pre>
+<h4 id="数据搬运">数据搬运</h4>
+<p>常数在 plan9 汇编用 $num 表示，可以为负数，默认情况下为十进制。可以用 $0x123 的形式来表示十六进制数。搬运的长度是由 MOV 的后缀决定的。</p>
+<pre><code class="language-assembly">MOVB $1, DI      # 1 byte
+MOVW $0x10, BX   # 2 bytes
+MOVL $1, DX      # 4 bytes
+MOVQ $-10, AX    # 8 bytes
+</code></pre>
+<h4 id="跳转指令">跳转指令</h4>
+<pre><code class="language-assembly"># 无条件跳转
+JMP addr   # 跳转到地址，地址可为代码中的地址，不过实际上手写不会出现这种东西
+JMP label  # 跳转到标签，可以跳转到同一函数内的标签位置
+JMP 2(PC)  # 以当前指令为基础，向前/后跳转 x 行
+JMP -2(PC) # 同上
+
+// 有条件跳转
+JNZ target # 如果 zero flag 被 set 过，则跳转
+</code></pre>
+<h4 id="常见指令列表">常见指令列表</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">助记符</th>
+<th style="text-align:left">指令种类</th>
+<th style="text-align:left">用途</th>
+<th style="text-align:left">示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">MOVQ</td>
+<td style="text-align:left">传送</td>
+<td style="text-align:left">数据传送</td>
+<td style="text-align:left">MOVQ 48, AX // 把 48 传送到 AX</td>
+</tr>
+<tr>
+<td style="text-align:left">LEAQ</td>
+<td style="text-align:left">传送</td>
+<td style="text-align:left">地址传送</td>
+<td style="text-align:left">LEAQ AX, BX // 把 AX 有效地址传送到 BX</td>
+</tr>
+<tr>
+<td style="text-align:left">PUSHQ</td>
+<td style="text-align:left">传送</td>
+<td style="text-align:left">栈压入</td>
+<td style="text-align:left">PUSHQ AX // 将 AX 内容送入栈顶位置</td>
+</tr>
+<tr>
+<td style="text-align:left">POPQ</td>
+<td style="text-align:left">传送</td>
+<td style="text-align:left">栈弹出</td>
+<td style="text-align:left">POPQ AX // 弹出栈顶数据后修改栈顶指针</td>
+</tr>
+<tr>
+<td style="text-align:left">ADDQ</td>
+<td style="text-align:left">运算</td>
+<td style="text-align:left">相加并赋值</td>
+<td style="text-align:left">ADDQ BX, AX // 等价于 AX+=BX</td>
+</tr>
+<tr>
+<td style="text-align:left">SUBQ</td>
+<td style="text-align:left">运算</td>
+<td style="text-align:left">相减并赋值</td>
+<td style="text-align:left">SUBQ BX, AX // 等价于 AX-=BX</td>
+</tr>
+<tr>
+<td style="text-align:left">CMPQ</td>
+<td style="text-align:left">运算</td>
+<td style="text-align:left">比较大小</td>
+<td style="text-align:left">CMPQ SI CX // 比较 SI 和 CX 的大小</td>
+</tr>
+<tr>
+<td style="text-align:left">CALL</td>
+<td style="text-align:left">转移</td>
+<td style="text-align:left">调用函数</td>
+<td style="text-align:left">CALL runtime.printnl(SB) // 发起调用</td>
+</tr>
+<tr>
+<td style="text-align:left">JMP</td>
+<td style="text-align:left">转移</td>
+<td style="text-align:left">无条件转移指令</td>
+<td style="text-align:left">JMP 0x0185 //无条件转至 0x0185 地址处</td>
+</tr>
+<tr>
+<td style="text-align:left">JLS</td>
+<td style="text-align:left">转移</td>
+<td style="text-align:left">条件转移指令</td>
+<td style="text-align:left">JLS 0x0185 //左边小于右边，则跳到 0x0185</td>
+</tr>
+</tbody>
+</table>
+<h3 id="寄存器">寄存器</h3>
+<p>Plan9 中使用寄存器不需要带 r 或 e 的前缀，例如 rax，只要写 AX 即可：</p>
+<table>
+<thead>
+<tr>
+<th>X86_64</th>
+<th>rax</th>
+<th>rbx</th>
+<th>rcx</th>
+<th>rdx</th>
+<th>rdi</th>
+<th>rsi</th>
+<th>rbp</th>
+<th>rsp</th>
+<th>r8</th>
+<th>r9</th>
+<th>r10</th>
+<th>r11</th>
+<th>r12</th>
+<th>r13</th>
+<th>r14</th>
+<th>rip</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Plan9</td>
+<td>AX</td>
+<td>BX</td>
+<td>CX</td>
+<td>DX</td>
+<td>DI</td>
+<td>SI</td>
+<td>BP</td>
+<td>SP</td>
+<td>R8</td>
+<td>R9</td>
+<td>R10</td>
+<td>R11</td>
+<td>R12</td>
+<td>R13</td>
+<td>R14</td>
+<td>PC</td>
+</tr>
+</tbody>
+</table>
+<h4 id="伪寄存器">伪寄存器</h4>
+<ul>
+<li><strong>FP</strong>：使用形式 <code>symbol+offset(FP)</code>，引用函数的输入参数。例如 <code>arg0+0(FP)</code>、<code>arg1+8(FP)</code>，使用 FP 不加 symbol 时，无法通过编译，在汇编层面来讲，symbol 并没有什么用，加 symbol 主要是为了提升代码可读性。另外，官方文档虽然将伪寄存器 FP 称之为 frame pointer，实际上它根本不是 frame pointer，按照传统的 x86 的习惯来讲，frame pointer 是指向整个 stack frame 底部的 BP 寄存器。假如当前的 callee 函数是 add，在 add 的代码中引用 FP，该 FP 指向的位置不在 callee 的 stack frame 之内，而是在 caller 的 stack frame 上。</li>
+<li><strong>SB</strong>：全局静态基指针，一般涌来声明函数或全局变量。</li>
+<li><strong>SP</strong>：Plan9 的这个 SP 寄存器指向当前栈帧的局部变量的开始位置，使用形式 <code>symbol+offset(SP)</code>，引用函数的局部变量。假如局部变量都是 8 字节，那么第一个局部变量就可以用 <code>localvar0-8(SP)</code> 来表示。手写汇编代码时，如果是 <code>symbol+offset(SP)</code> 形式，则表示伪寄存器 SP。如果是 <code>offset(SP)</code> 则表示硬件寄存器 SP。务必注意。对于编译输出(go tool compile -S / go tool objdump)的代码来讲，目前所有的 SP 都是硬件寄存器 SP，无论是否带 symbol。</li>
+<li><strong>TLS</strong>：<code>TLS</code> 是一个由 runtime 维护的虚拟寄存器，保存了指向当前 <code>g</code> 的指针，这个 <code>g</code> 的数据结构会跟踪 goroutine 运行时的所有状态值。</li>
+</ul>
+<h3 id="变量声明">变量声明</h3>
+<p>TODO 没懂</p>
+<h3 id="函数声明">函数声明</h3>
+<pre><code class="language-assembly"># 该声明定义在同一个 package 下的任意 .go 文件中
+# 只有函数头，没有实现
+// func add(a, b int) int
+TEXT pkgname·add(SB), NOSPLIT, $0-8
+    MOVQ a+0(FP), AX
+    MOVQ a+8(FP), BX
+    ADDQ AX, BX
+    MOVQ BX, ret+16(FP)
+    RET
+</code></pre>
+<p>为什么要叫 TEXT ？我们的代码在二进制文件中，是存储在 .text 段中的，这里也就是一种约定俗成的起名方式。实际上在 plan9 中 TEXT 是一个指令，用来定义一个函数。除了 TEXT 之外还有前面变量声明说到的 DATA/GLOBL。</p>
+<p>定义中的 pkgname 部分是可以省略的，非想写也可以写上。不过写上 pkgname 的话，在重命名 package 之后还需要改代码，所以推荐最好还是不要写。</p>
+<p>中点 <code>·</code> 比较特殊，是一个 unicode 的中点，该点在 mac 下的输入方法是 <code>option+shift+9</code>。在程序被链接之后，所有的中点<code>·</code> 都会被替换为句号<code>.</code>，比如你的方法是 <code>runtime·main</code>，在编译之后的程序里的符号则是 <code>runtime.main</code>。</p>
+<p>总结：</p>
+<pre><code class="language-assembly">                              参数及返回值大小
+                                  | 
+ TEXT pkgname·add(SB),NOSPLIT,$32-32
+       |        |              |
+      包名     函数名         栈帧大小(局部变量+可能需要的额外调用函数的参数空间的总大小，但不包括调用其它函数时的 ret address 的大小)
+</code></pre>
+<h2 id="栈结构">栈结构</h2>
+<pre><code>                       -----------------                                           
+                       current func arg0                                           
+                       ----------------- &lt;----------- FP(pseudo FP)                
+                        caller ret addr                                            
+                       +---------------+                                           
+                       | caller BP(*)  |                                           
+                       ----------------- &lt;----------- SP(pseudo SP，实际上是当前栈帧的 BP 位置)
+                       |   Local Var0  |                                           
+                       -----------------                                           
+                       |   Local Var1  |                                           
+                       -----------------                                           
+                       |   Local Var2  |                                           
+                       -----------------                -                          
+                       |   ........    |                                           
+                       -----------------                                           
+                       |   Local VarN  |                                           
+                       -----------------                                           
+                       |               |                                           
+                       |               |                                           
+                       |  temporarily  |                                           
+                       |  unused space |                                           
+                       |               |                                           
+                       |               |                                           
+                       -----------------                                           
+                       |  call retn    |                                           
+                       -----------------                                           
+                       |  call ret(n-1)|                                           
+                       -----------------                                           
+                       |  ..........   |                                           
+                       -----------------                                           
+                       |  call ret1    |                                           
+                       -----------------                                           
+                       |  call argn    |                                           
+                       -----------------                                           
+                       |   .....       |                                           
+                       -----------------                                           
+                       |  call arg3    |                                           
+                       -----------------                                           
+                       |  call arg2    |                                           
+                       |---------------|                                           
+                       |  call arg1    |                                           
+                       -----------------   &lt;------------  hardware SP 位置           
+                       | return addr   |                                           
+                       +---------------+                                           
+                                                              
+</code></pre>
+<p>此外需要注意的是，caller BP 是在编译期由编译器插入的，用户手写代码时，计算 frame size 时是不包括这个 caller BP 部分的。是否插入 caller BP 的主要判断依据是:</p>
+<ol>
+<li>
+<p>函数的栈帧大小大于 0</p>
+</li>
+<li>
+<p>下述函数返回 true</p>
+<pre><code class="language-go">func Framepointer_enabled(goos, goarch string) bool {
+    return framepointer_enabled != 0 &amp;&amp; goarch == &quot;amd64&quot; &amp;&amp; goos != &quot;nacl&quot;
+}
+</code></pre>
+</li>
+</ol>
+<p>如果编译器在最终的汇编结果中没有插入 caller BP(源代码中所称的 frame pointer)的情况下，伪 SP 和伪 FP 之间只有 8 个字节的 caller 的 return address，而插入了 BP 的话，就会多出额外的 8 字节。也就说伪 SP 和伪 FP 的相对位置是不固定的，有可能是间隔 8 个字节，也有可能间隔 16 个字节。并且判断依据会根据平台和 Go 的版本有所不同。</p>
+<p>图上可以看到，FP 伪寄存器指向函数的传入参数的开始位置，因为栈是朝低地址方向增长，为了通过寄存器引用参数时方便，所以参数的摆放方向和栈的增长方向是相反的，即：</p>
+<pre><code class="language-shell">                              FP
+high ----------------------&gt; low
+argN, ... arg3, arg2, arg1, arg0
+</code></pre>
+<p>假设所有参数均为 8 字节，这样我们就可以用 symname+0(FP) 访问第一个 参数，symname+8(FP) 访问第二个参数，以此类推。用伪 SP 来引用局部变量，原理上来讲差不多，不过因为伪 SP 指向的是局部变量的底部，所以 symname-8(SP) 表示的是第一个局部变量，symname-16(SP)表示第二个，以此类推。当然，这里假设局部变量都占用 8 个字节。</p>
+<p>图的最上部的 caller return address 和 current func arg0 都是由 caller 来分配空间的。不算在当前的栈帧内。</p>
+<h3 id="argsize-和-framesize-计算规则">argsize 和 framesize 计算规则</h3>
+<h4 id="argsize">argsize</h4>
+<pre><code class="language-assembly"> TEXT pkgname·add(SB),NOSPLIT,$16-32
+</code></pre>
+<p>前面已经说过 <code>$16-32</code> 表示 $framesize-argsize。Go 在函数调用时，参数和返回值都需要由 caller 在其栈帧上备好空间。argsize 的计算方法是，参数大小求和+返回值大小求和，例如入参是 3 个 int64 类型，返回值是 1 个 int64 类型，那么这里的 argsize = sizeof(int64) * 4。</p>
+<p>不过真实世界永远没有我们假设的这么美好，函数参数往往混合了多种类型，还需要考虑内存对齐问题。[[Go 内存对齐]]</p>
+<p>如果不确定自己的函数签名需要多大的 argsize，可以通过简单实现一个相同签名的空函数，然后 go tool objdump 来逆向查找应该分配多少空间。</p>
+<h4 id="framesize">framesize</h4>
+<p>函数的 framesize 就稍微复杂一些了，手写代码的 framesize 不需要考虑由编译器插入的 caller BP，要考虑：</p>
+<ol>
+<li>局部变量，及其每个变量的 size。</li>
+<li>在函数中是否有对其它函数调用时，如果有的话，调用时需要将 callee 的参数、返回值考虑在内。虽然 return address(rip)的值也是存储在 caller 的 stack frame 上的，但是这个过程是由 CALL 指令和 RET 指令完成 PC 寄存器的保存和恢复的，在手写汇编时，同样也是不需要考虑这个 PC 寄存器在栈上所需占用的 8 个字节的。</li>
+<li>原则上来说，调用函数时只要不把局部变量覆盖掉就可以了。稍微多分配几个字节的 framesize 也不会死。</li>
+<li>在确保逻辑没有问题的前提下，你愿意覆盖局部变量也没有问题。只要保证进入和退出汇编函数时的 caller 和 callee 能正确拿到返回值就可以。</li>
+</ol>
+<h2 id="示例">示例</h2>
+<h3 id="fp-的使用">FP 的使用</h3>
+<p>math.go:</p>
+<pre><code class="language-go">package main
+
+import &quot;fmt&quot;
+
+func add(a, b int) int // 汇编函数声明
+
+func main() {
+    fmt.Println(add(10, 11))
+}
+</code></pre>
+<p>math.s:</p>
+<pre><code class="language-assembly">#include &quot;textflag.h&quot; // 因为我们声明函数用到了 NOSPLIT 这样的 flag，所以需要将 textflag.h 包含进来
+
+// func add(a, b int) int
+TEXT ·add(SB), NOSPLIT, $0-24
+    MOVQ a+0(FP), AX # 参数 a
+    MOVQ b+8(FP), BX # 参数 b
+    ADDQ BX, AX    # AX += BX
+    MOVQ AX, ret+16(FP) # 返回
+    RET
+    # 最后一行的空行是必须的，否则可能报 unexpected EOF
+</code></pre>
+<h3 id="伪寄存器-sp-伪寄存器-fp-和硬件寄存器-sp">伪寄存器 SP 、伪寄存器 FP 和硬件寄存器 SP</h3>
+<p>来写一段简单的代码证明伪 SP、伪 FP 和硬件 SP 的位置关系。<br>
+spspfp.s:</p>
+<pre><code class="language-assembly">#include &quot;textflag.h&quot;
+
+// func output(int) (int, int, int)
+TEXT ·output(SB), $8-48
+    MOVQ 24(SP), DX // 不带 symbol，这里的 SP 是硬件寄存器 SP
+    MOVQ DX, ret3+24(FP) // 第三个返回值
+    MOVQ perhapsArg1+16(SP), BX // 当前函数栈大小 &gt; 0，所以 FP 在 SP 的上方 16 字节处
+    MOVQ BX, ret2+16(FP) // 第二个返回值
+    MOVQ arg1+0(FP), AX
+    MOVQ AX, ret1+8(FP)  // 第一个返回值
+    RET
+</code></pre>
+<p>spspfp.go:</p>
+<pre><code class="language-go">package main
+
+import (
+    &quot;fmt&quot;
+)
+
+func output(int) (int, int, int) // 汇编函数声明
+
+func main() {
+    a, b, c := output(987654321)
+    fmt.Println(a, b, c)
+}
+</code></pre>
+<p>执行上面的代码，可以得到输出:</p>
+<pre><code class="language-shell">987654321 987654321 987654321
+</code></pre>
+<p>和代码结合思考，可以知道我们当前的栈结构是这样的:</p>
+<pre><code class="language-shell">------
+ret2 (8 bytes)
+------
+ret1 (8 bytes)
+------
+ret0 (8 bytes)
+------
+arg0 (8 bytes)
+------ FP
+ret addr (8 bytes)
+------
+caller BP (8 bytes)
+------ pseudo SP
+frame content (8 bytes)
+------ hardware SP
+</code></pre>
+<p>本小节例子的 framesize 是大于 0 的，读者可以尝试修改 framesize 为 0，然后调整代码中引用伪 SP 和硬件 SP 时的 offset，来研究 framesize 为 0 时，伪 FP，伪 SP 和硬件 SP 三者之间的相对位置。</p>
+<p>本小节的例子是为了告诉大家，伪 SP 和伪 FP 的相对位置是会变化的，手写时不应该用伪 SP 和 &gt;0 的 offset 来引用数据，否则结果可能会出乎你的预料。</p>
+<h3 id="defer">defer</h3>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/Oj_Hy57cD/" class="tag">
+                    Go语言学习笔记
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/aa1vxy4S8/" class="tag">
+                    go
+                  </a>
+                
+              </div>
+            
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

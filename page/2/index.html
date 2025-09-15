@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="努力前行">
+    
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/concurrency-and-scheduler-of-go/">
+                  <h2 class="post-title">Go 的并发性与调度器</h2>
+                </a>
+                <div class="post-date">
+                  2019-03-06
+                </div>
+                <div class="post-abstract">
+                  <p>本篇文章是我对 Go 语言并发性的理解总结，适合初步了解并发，对 Go 语言的并发编程与调度器原理有兴趣的读者。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/json-schema/">
+                  <h2 class="post-title">JSON Schema</h2>
+                </a>
+                <div class="post-date">
+                  2018-12-01
+                </div>
+                <div class="post-abstract">
+                  <p><strong>JSON Schema 详解：未完待续</strong></p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/oauth2-and-oauth2-package/">
+                  <h2 class="post-title">OAuth2.0 与 oauth2-server 库的使用</h2>
+                </a>
+                <div class="post-date">
+                  2018-11-22
+                </div>
+                <div class="post-abstract">
+                  <p><a href="https://en.wikipedia.org/wiki/OAuth">OAuth2.0</a> 是关于授权的开放网络标准，它允许用户已第三方应用获取该用户在某一网站的私密资源，而无需提供用户名与密码，目前已在全世界得到广泛应用。</p>
+<p><a href="https://github.com/thephpleague/oauth2-server">league/oauth2-server</a> 是一个轻量级并且功能强大的符合 OAuth2.0 协议的 PHP 库，使用它可以构建出标准的 OAuth2.0 授权服务器。</p>
+<p>本文通过对 PHP 库：league/oauth2-server 进行实践的同时，理解 OAuth2.0 的工作流程与设计思路。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/session-and-JWT/">
+                  <h2 class="post-title">Session 与 JWT</h2>
+                </a>
+                <div class="post-date">
+                  2017-08-11
+                </div>
+                <div class="post-abstract">
+                  <p><strong>关于 REST 与 HTTP 中无状态架构约束的思考之 Session 与 JWT</strong></p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/hypertext-friven-web-API/">
+                  <h2 class="post-title">超媒体驱动的 Web API</h2>
+                </a>
+                <div class="post-date">
+                  2017-04-20
+                </div>
+                <div class="post-abstract">
+                  <p><strong>REST 必须是超媒体驱动的！我在以前关于 RESTful API 的博文中，对于超媒体驱动只有简单的提过，现在来探索这个问题。</strong></p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/best-practices-for-RESTful-API/">
+                  <h2 class="post-title">RESTful API 实践</h2>
+                </a>
+                <div class="post-date">
+                  2016-10-11
+                </div>
+                <div class="post-abstract">
+                  <p>REST 是Fielding博士在他的论文<a href="#fielding%E5%8D%9A%E5%A3%AB%E8%AE%BA%E6%96%87">[1]</a>中提出的一种新的架构风格，被称作表述性状态移交（Representational State Transfer）架构风格，它成为了现代 Web 架构的基础。<a href="#http">[2]</a></p>
+<p>符合 REST 原则的应用程序或设计称做 RESTful。</p>
+<p>由于不符合超媒体，现在是 HTTP API。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/http-cache/">
+                  <h2 class="post-title">HTTP 缓存小记</h2>
+                </a>
+                <div class="post-date">
+                  2016-09-10
+                </div>
+                <div class="post-abstract">
+                  <p>参考文章:https://developers.google.com/web/fundamentals/performance/optimizing-content-efficiency/http-caching?hl=zh-cn</p>
+<p><strong>http的缓存有两种方案<code>ETag</code>与<code> Last-Modified</code> 本文讲的是第一种,也就是参考文章里所讲的</strong></p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+
+          <div class="pagination-container">
+  
+    <a href="https://cnbailian.github.io/" class="prev"><i class="icon-arrow-ios-back-outline"></i> 上一页</a>
+  
+  
+</div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+
+  </body>
+</html>

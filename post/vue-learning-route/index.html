@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>Vue 学习路线 | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="本文旨在规划 Vue 框架的学习路线，通过掌握基本概念了解框架，熟悉生态系统，最后深入至框架本身。并未涉及到框架使用方式等详细内容，对每个知识点也只是浅尝即止。
+  
+为什么选择vue
+可能有很多人只是知道 Vue 这个框架，并没有详细的了..." />
+    <meta name="keywords" content="vue,frontend" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">Vue 学习路线</h2>
+            <div class="post-date">2019-04-10</div>
+            
+            <div class="post-content" v-pre>
+              <p>本文旨在规划 Vue 框架的学习路线，通过掌握基本概念了解框架，熟悉生态系统，最后深入至框架本身。并未涉及到框架使用方式等详细内容，对每个知识点也只是浅尝即止。</p>
+<!--more-->  
+<h2 id="为什么选择vue">为什么选择vue</h2>
+<p>可能有很多人只是知道 Vue 这个框架，并没有详细的了解，所以在这里简单的列举下 Vue 的优势。</p>
+<ul>
+<li>
+<p>Vue 有着前端框架中最多的 stars，人数众多的开发者，保证了社区的繁荣。</p>
+</li>
+<li>
+<p>相对来说较平滑的学习曲线，这主要取决于vue是一个渐进式框架，同时使用基础的HTML模版语法，这让有HTML经验的人很少上手。</p>
+</li>
+<li>
+<p>渐进式框架也可以更好的逐步的改变原有项目。</p>
+</li>
+<li>
+<p>团队中有来自世界各地的专家开发者，中文社区和文档质量相对不错。</p>
+</li>
+</ul>
+<h2 id="学习路线">学习路线</h2>
+<ol>
+<li>
+<h3 id="javascript与web基础">JavaScript与web基础</h3>
+<p>学习 Vue 框架之前必须先了解 JavaScript 与 web 开发的基本知识，就像看一本英语书前，你需要先掌握英文。</p>
+</li>
+<li>
+<h3 id="vue-基本概念">Vue 基本概念</h3>
+<p>使用 Vue 来构建项目，需要先了解一些基本概念：</p>
+<p><strong>渐进式框架</strong></p>
+<p>渐进式就是：一步一步，不需要在一开始就把所有的东西都用上。</p>
+<p>在 Vue 上的体现就是：它的核心库只包含视图，其他的客户端路由、全局状态管理等通过核心插件提供。</p>
+<p>Vue 在设计角度上，包含了解决构建大型单页面应用的大部分问题，但你不需要一开始就把所有的东西都用上。这就带来了较平滑的学习曲线与对老项目渐进式重构的好处。</p>
+<p><strong>声明式渲染</strong></p>
+<pre><code class="language-HTML">&lt;div id=&quot;app&quot;&gt;
+  {{ message }}
+&lt;/div&gt;
+</code></pre>
+<pre><code class="language-javascript">var app = new Vue({
+  el: '#app',
+  data: {
+    message: 'Hello Vue!'
+  }
+})
+</code></pre>
+<p>这里的示例代码就是声明式渲染，你写出想要的结果，由框架执行渲染的命令。</p>
+<p><strong>响应式数据</strong></p>
+<p>在上面的示例代码中，数据就与 DOM 建立了关联，成为响应式数据。此时改变 <code>app.message</code> 的值，就可以看到页面也会发生对应改变。</p>
+<p><strong>组件化</strong></p>
+<p>组件化的核心思想就是：将页面结构映射为组件树。</p>
+<figure data-type="image" tabindex="1"><img src="https://www.superbed.cn/pic/5c4555f25f3e509ed94b6480" alt="component-tree.png" loading="lazy"></figure>
+<p>组件是资源独立的，组件可以复用，组件与组件之间可以嵌套。</p>
+<p><strong>单页面应用与客户端路由</strong></p>
+<p>单页面应用（SPA）可以通过单个页面实现传统网站多个页面的功能，通过客户端路由实现加载新内容，而不需要通过浏览器跳转，重新加载页面。</p>
+<p>Vue Router 就是 Vue 的实现，由官方维护，通过插件的形式加载。</p>
+<p><strong>状态管理</strong></p>
+<p>在 Vue 中，每个组件管理着自己的状态，如果有状态需要在多个组件间复用，就需要把共享的状态抽离出来，作为全局的状态来管理，这样，在任何组件中都能获取到。</p>
+<p>这就是 Vuex 所做的事情。</p>
+</li>
+<li>
+<h3 id="使用-vue-构建单页面应用">使用 Vue 构建单页面应用</h3>
+<p>以上的基本概念用于理解 Vue，如果要将它实际应用到项目中，还需要了解更多的东西。</p>
+<p><strong>构建工具</strong></p>
+<p>Vue 提供了一个官方的 CLI：Vue CLI，为单页面应用搭建繁杂的脚手架。</p>
+<p>最新的版本 Vue CLI3中加入了 GUI 的支持，对用户更为友好。</p>
+<p><strong>使用 axios 访问 Web API</strong></p>
+<p>Vue 的一个核心思想就是数据驱动。所谓数据驱动，是指视图是由数据驱动生成的，Vue 将数据与 DOM 关联，构建响应式数据，我们对视图的修改，不会直接修改 DOM，而是修改数据，响应至视图。</p>
+<p>作为一个单页面应用，数据需要通过 Web API 获取，这些数据可能通过 RESTful API 或 GraphQL 提供，也可能通过 WebSocket 提供。</p>
+<p>如果是使用的 HTTP 协议，在 Vue Cookbook 中，推荐使用基于 promise 的 axios。</p>
+<p><strong>测试</strong></p>
+<p>如果想要开发出稳定可维护的项目，测试是必不可少的。</p>
+<p>Vue 官方团队提供了 Vue Test Utils，Vue Test Utils 通过将组件隔离挂载，然后模拟必要的输入和对输出的断言来测试。</p>
+<p><strong>Chrome 开发者工具</strong></p>
+<p>Vue.js devtools 是一个用于 Chrome 的开发者工具，使用它可以清楚的看到组件树的结构，组件的状态等信息。如果使用了 Vuex，还可以看到全局状态，并将其快照发送给其他人，这个人可以在控制台导入状态，方便定位问题。</p>
+<p><strong>多端支持</strong></p>
+<p>可以在 Weex 中使用 Vue，Vue 的官方也与 Weex 的团队加深联系，在未来的 Vue3 中，会有更好的支持。</p>
+</li>
+<li>
+<h3 id="前端技术栈">前端技术栈</h3>
+<p>上述所讲的大多是 Vue 或 Vue 生态系统中的工具。但 Vue 并不是独立存在的，它知识前端技术栈中的一部分。</p>
+<p><strong>现代 JavaScript 与 Babel</strong></p>
+<p>Vue 应用程序可以使用 ES5 开发，这是现代浏览器都支持的 JavaScript 标准。</p>
+<p>如果想要获得更好的开发体验，可以更新 JavaScript 标准 ES2015 或更高版本，但这会导致不支持旧版浏览器，为了解决这个问题，就需要使用 Babel，它可以将你的新语法编译为 ES5 代码。</p>
+<p><strong>Webpack</strong></p>
+<p>Webpack 是一个模块打包器，它可以将你的应用程序中各个模块的代码打包至一个或多个文件中，形成浏览器可读的 js 文件。还可以在打包过程中，对代码进行转换、使用 Babel、Sass、TypeScript 等。</p>
+<p>虽然 Vue CLI 可以为我们构建基础的 webpack 配置，并且在新版本中，可以使用 GUI 来调整，但这并不意味着你可以不学习它，你还是不可避免的需要自行调试它的配置。</p>
+<p><strong>TypeScript 与 Flow</strong></p>
+<p>Vue2 版本中使用的是 Flow，在 Vue3 中将重构为使用 TypeScript。</p>
+<p>这两门语言的主要目的是让 js 拥有类型系统，使用它们可以写出高健壮性的代码，并且可以编译为普通的 ES 语法。</p>
+<p>Vue3 将完全使用 TypeScript 编写，这并不意味着你必须使用它。但是如果想要了解 Vue 源码，也是不可避免的。</p>
+</li>
+<li>
+<h3 id="vue-生态系统">Vue 生态系统</h3>
+<p><strong>官方核心插件</strong></p>
+<p>上述提到的 Vue Router、Vuex，还有 Vue SSR 都是由官方维护的，这区别于 React，官方主要是考虑到了社区维护会导致更新频繁、解决方案太杂乱的问题。</p>
+<p><strong>官方工具</strong></p>
+<p>上述也提到过的 Vue devtools、Vue CLI，还有 Vue Loader，也都是基于同样的原因。但这不意味着没有社区参与，作为开源项目，依然可以提出建议，修复问题，只是官方有一个发展方向作为参考。</p>
+<p><strong>UI 组件库</strong></p>
+<p>也可以称为 UI 框架，主要是一系列常用的组件，例如 Form、Table 等常见的元素，方便快速开发。</p>
+<p>市面上有非常多的 UI 框架可供选择，Element UI、iView、Vux 等，各有各的风格特色。</p>
+</li>
+<li>
+<h3 id="深入理解-vue">深入理解 Vue</h3>
+<p><strong>为什么是渐进式框架</strong></p>
+<p><em>框架的存在是为了帮助我们应对复杂度 - 《Vue 2.0——渐进式前端解决方案》</em></p>
+<p>当我们在做一个前端应用时，会遇许多的问题，这些问题可以称为应用复杂度，前端框架的出现，就是为了降低应用复杂度，解决一些重复的并且已经有良好解决方案的问题。</p>
+<p>但是，框架本身由于其学习曲线，也会带来不同的复杂度，称为框架复杂度。如何权衡应用复杂度与框架复杂度就称为了一个问题。</p>
+<p>React 与 Vue 的选择的模式就是：以可弹性伸缩的框架复杂度来应对不同的应用复杂度。框架核心库只包含视图层，其他的问题都由可选的附加库/工具来解决。</p>
+<p>Facebook 团队只专注做 React 本身，其他的问题都是由社区贡献解决方案，社区非常活跃，也有很多优秀的想法和思路，但社区的活跃性也会带来一些副作用，版本更新太快，一个问题有太多的解决方案导致的选择困难，库与库之间可能存在的磨合问题。</p>
+<p>Vue 的团队选择的方向就是渐进式，核心插件\工具由团队开发，负责一些大方向上的统一，同时也是模块化的，可供选择。</p>
+<p><strong>声明式渲染</strong></p>
+<p>Vue 或者说现代 js 框架，都有一个统一的看法，数据状态是唯一的真相，DOM 状态只是数据状态的映射。所有的逻辑操作都应在状态的层面进行，当状态发生改变时，DOM 在框架的帮助下自动更新至合理的状态。</p>
+<p>那么，Vue 时如何实现的呢？主要是使用的虚拟（Virtual） DOM。</p>
+<p>虚拟 DOM 简单来说就是使用 js 对象去描述一个 DOM 节点，它产生的前提就是一个 DOM 元素在浏览器中是非常庞大的，因为有着各种属性，各种事件，浏览器的标准就是这么设计的。相比于 DOM 对象，原生的 js 对象处理起来更快，而且更简单。</p>
+<p>Vue 将它所有要监听的 DOM 映射为一个虚拟 DOM 树，这个树非常的轻量，它的职责就是描述当前页面的 DOM 状态。</p>
+<p>当数据状态发生改变时，Vue 的响应系统会侦测到变化，并生成一个新的虚拟 DOM 树，通过与上一个虚拟 DOM 树进行比较，将改动应用至真实 DOM 状态。</p>
+<p>不同于 React 的是，Vue 可以使用 HTML 模版，也可以是用 JSX，这是 Vue 在编译时将模版编译为渲染函数。</p>
+<p><strong>状态管理</strong></p>
+<p>状态管理本质上就是把整个应用抽象为下图中的循环，State 驱动 View 的渲染，而用户对 View 进行操作产生 Action，会使 State 产生变化，从而导致 View 重新渲染，这就是单向数据流。</p>
+<figure data-type="image" tabindex="2"><img src="https://www.superbed.cn/pic/5c4554ae5f3e509ed94b5b8c" alt="state-单向数据流.png" loading="lazy"></figure>
+<p>在 Vue 中，一个组件就已经是这样的结构了，在多个组件共享状态时，或是来自不同视图的行为变更一个状态时，应该如何管理呢？此问题的答案就是 Vuex。</p>
+<p>它将组件的共享状态抽离出来，放入 Store，组件通过调度（<code>dispatch</code>）使用 Action，Action 通过提交（<code>commit</code>）Mutation 修改 State，然后响应到组件。</p>
+<figure data-type="image" tabindex="3"><img src="https://www.superbed.cn/pic/5c4554c75f3e509ed94b5c5d" alt="vuex.png" loading="lazy"></figure>
+</li>
+<li>
+<h3 id="实现原理">实现原理</h3>
+<p><strong>生命周期</strong></p>
+<figure data-type="image" tabindex="4"><img src="https://www.superbed.cn/pic/5c45553b5f3e509ed94b5ec4" alt="lifecycle.png" loading="lazy"></figure>
+<p><strong>Virtual DOM</strong></p>
+<p>Virtual DOM 在 Vue 中的实现。</p>
+<p><strong>响应式数据原理</strong></p>
+<p>在 Vue2，使用的是 ES5 的 <code>Object.defineProperty</code> 来构成数据监听系统，这也是 Vue2 不能兼容 IE8 及以下的原因。</p>
+<p>在即将到来的 Vue3 中，会使用 <code>Proxy</code> 进行重构数据监听系统，这会导致 Vue3 不能兼容 IE11 及一下，Vue 团队会提出其他的办法来解决这个问题。</p>
+<p><strong>编译与渲染函数</strong></p>
+<p>在 Vue 中，会将模版编译为渲染函数，在 Vue3 中，也做出了相当的优化。</p>
+<p><strong>组件化</strong></p>
+<p>每一个组件就是一个 Vue 实例，组件内部是如何工作的，组件间的嵌套等实现。</p>
+<p><strong>v-model</strong></p>
+<p>Vue 提供了 <code>v-model</code> 的指令，用于实现表单与数据状态之间的双向绑定，这也没有破坏单向数据流，只是语法糖。</p>
+<pre><code class="language-html">&lt;input v-model=&quot;sth&quot; /&gt;
+&lt;input v-bind:value=&quot;sth&quot; v-on:input=&quot;sth = $event.target.value&quot; /&gt;
+</code></pre>
+<p><strong>核心插件</strong></p>
+<p>Vue Router：客户端路由中存在的种种问题，嵌套路由、重定向/别名、懒加载等。</p>
+<p>Vuex：初始化过程，如何管理全局状态等。</p>
+</li>
+</ol>
+<h2 id="思维导图">思维导图</h2>
+<figure data-type="image" tabindex="5"><img src="https://www.superbed.cn/pic/5c4554da5f3e509ed94b5cd6" alt="Vue 学习路线.png" loading="lazy"></figure>
+<h2 id="相关学习资料">相关学习资料</h2>
+<p><a href="https://www.infoq.cn/article/vue-2-progressive-front-end-solution">《Vue 2.0——渐进式前端解决方案》</a> 尤雨溪</p>
+<p><a href="https://cn.vuejs.org/v2/guide/">《Vue Guide》</a> Vue 官方团队</p>
+<p><a href="https://ustbhuangyi.github.io/vue-analysis/">《Vue.js 技术揭秘》</a> ustbhuangyi</p>
+<p><a href="https://vuex.vuejs.org/zh/">《Vuex》</a> Vuex</p>
+<p><a href="https://vue.w3ctech.com/">VueConf</a> VueConf</p>
+<p><a href="https://vuejsdevelopers.com/">Vue.js developers</a> vuejsdevelopers.com</p>
+<h2 id="参考文章">参考文章</h2>
+<p><a href="https://www.infoq.cn/article/9XymmTqu*4QwahqikMka">《2019 年 Vue 学习路线图》</a></p>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/XGk69ns-R/" class="tag">
+                    vue
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/N6lqfN6NhF/" class="tag">
+                    frontend
+                  </a>
+                
+              </div>
+            
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

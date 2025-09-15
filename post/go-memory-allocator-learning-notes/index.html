@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>Go 内存分配器学习笔记 | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="本文用于持续记录 Go GC 相关技术学习笔记。
+
+Go 内存分配器
+内存分配器相关笔记，主要是运行时的 mallocinit 函数的初始化以及 mallocgc 函数的动态分配。
+设计原则
+Go 的内存分配器基于 Thread-Cache..." />
+    <meta name="keywords" content="Go语言学习笔记,go" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">Go 内存分配器学习笔记</h2>
+            <div class="post-date">2021-01-21</div>
+            
+            <div class="post-content" v-pre>
+              <p>本文用于持续记录 Go GC 相关技术学习笔记。</p>
+<!--more-->
+<h1 id="go-内存分配器">Go 内存分配器</h1>
+<p>内存分配器相关笔记，主要是运行时的 <code>mallocinit</code> 函数的初始化以及 <code>mallocgc</code> 函数的动态分配。</p>
+<h2 id="设计原则">设计原则</h2>
+<p>Go 的内存分配器基于 Thread-Cache Malloc（tcmalloc），tcmalloc 为每个线程实现了一个本地缓存，区分了小对象（小于 32 KB）和大对象分配两种分配模式，其管理的内存单元称为 span。</p>
+<p>Go 的内存分配器与 tcmalloc 存在一定差异。 这个差异来源于 Go 语言被设计为没有显式的内存分配与释放， 完全依靠编译器与运行时的配合来自动处理，因此也就造就了内存分配器、垃圾回收器两大组件。</p>
+<p>传统意义上的栈被 Go 的运行时霸占，不开放给用户态代码；而传统意义上的堆内存，又被 Go 运行时划分为了两个部分， 一个是 Go 运行时自身所需的堆内存，即堆外内存；另一部分则用于 Go 用户态代码所使用的堆内存，也叫做 Go 堆。 Go 堆负责了用户态对象的存放以及 goroutine 的执行栈。</p>
+<h3 id="小于-32kb-内存块的分配策略">小于 32KB 内存块的分配策略</h3>
+<p>当程序里发生了 <code>32KB</code> 以下的小块内存申请时，Go 会从一个叫做 <code>mcache</code> 的本地缓存给程序分配内存。这个本地缓存 <code>mcache</code> 持有一系列的大小为 <code>32KB</code> 的内存块，这样的一个内存块叫做 <code>mspan</code>，它是要给程序分配内存时的分配单元。</p>
+<p>在Go的调度器模型里（[[Go runtime]]），每个线程 <code>M</code> 会绑定给一个处理器 <code>P</code>，在单一粒度的时间里只能做多处理运行一个 <code>goroutine</code> ，每个 <code>P</code> 都会绑定一个上面说的本地缓存 <code>mcache</code>。当需要进行内存分配时，当前运行的 <code>goroutine</code> 会从 <code>mcache</code> 中查找可用的 <code>mspan</code>。从本地 <code>mcache</code> 里分配内存时不需要加锁，这种分配策略效率更高。</p>
+<p>为了避免浪费，<code>mcache</code> 持有的一系列 <code>mspan</code> 并不是同一大小，而是从 8 字节 到 32KB 分了大概70类。</p>
+<h4 id="无可用-mspan-时">无可用 <code>mspan</code> 时</h4>
+<p>当没有可分配的 <code>mspan</code> 时，会从 <code>mcentral</code> 中获取一个所需大小空间的新的 <code>mspan</code>，从 <code>mcentral </code>中分配会对其进行加锁， 但一次性获取整个 <code>span</code> 的过程均摊了对 <code>mcentral</code> 加锁的成本。<code>mcentral</code> 中有多个全局列表与每个规格的 <code>mspan</code> 对应，所以加锁不会影响其他规格的 <code>mspan</code>。</p>
+<p>如果 <code>mcentral</code> 的 <code>mspan</code> 也为空时，则它也会发生增长，从而从 <code>mheap</code> 中获取一连串的页，作为一个新的 <code>mspan</code> 进行提供。<code>mheap</code> 里的 <code>arena</code> 区域是真正的堆区，运行时会将 8KB 看作一页，这些内存页中存储了所有在堆上的初始化的对象。</p>
+<p>而如果 <code>mheap</code> 的 <code>arena</code> 区域仍然为空，或者没有足够大的对象来进行分配时，则会从操作系统中分配一组新的页（至少 1MB）， 从而均摊与操作系统沟通的成本。</p>
+<h3 id="大于-32kb-的内存块的分配策略">大于 32KB 的内存块的分配策略</h3>
+<p>直接在 <code>mheap</code> 上分配对应数量的内存页。</p>
+<h2 id="主要结构">主要结构</h2>
+<p>整理总结上面提到的主要结构：</p>
+<ul>
+<li>**arena：**保留整个虚拟地址空间。
+<ul>
+<li>Go 堆被视为由多个<code>arena</code> 组成，每个 <code>arena</code> 在 64 位机器上为 64MB，且起始地址与 <code>arena</code> 的大小对齐，所有的 <code>arena</code> 覆盖了整个 Go 堆的地址空间。</li>
+</ul>
+</li>
+<li>**mheap：**分配的堆，在也大小为 8KB 的粒度上进行管理。</li>
+<li>**mspan：**是 <code>mheap</code> 上管理的一连串的页。
+<ul>
+<li><code>mspan</code> 是相同大小等级的 span 的双向链表的一个节点，每个节点还记录了自己的起始地址、 指向的 span 中页的数量。</li>
+</ul>
+</li>
+<li>**mcentral：**收集了给定大小等级的所有 <code>span</code>。</li>
+<li>**mcache：**per-P 的缓存。
+<ul>
+<li>它是一个包含不同大小等级的 span 链表的数组，其中 mcache.alloc 的每一个数组元素 都是某一个特定大小的 mspan 的链表头指针。</li>
+</ul>
+</li>
+</ul>
+<img src="https://tva1.sinaimg.cn/large/008eGmZEly1gmv2hyopm3j337v0u01kx.jpg" alt="mem-struct" style="zoom:24%;" />
+<img src="https://tva1.sinaimg.cn/large/008eGmZEly1gmv2ka5u6nj30sm0ew3zl.jpg" alt="mem_struct"  />
+<h2 id="源码">源码</h2>
+<p>TODO</p>
+<h2 id="总结">总结</h2>
+<p>总结起来关于Go内存分配管理的策略有如下几点：</p>
+<ul>
+<li>Go在程序启动时，会向操作系统申请一大块内存，由<code>mheap</code>结构全局管理。</li>
+<li>Go内存管理的基本单元是<code>mspan</code>，每种<code>mspan</code>可以分配特定大小的<code>object</code>。</li>
+<li><code>mcache</code>, <code>mcentral</code>, <code>mheap</code>是<code>Go</code>内存管理的三大组件，<code>mcache</code>管理线程在本地缓存的<code>mspan</code>；<code>mcentral</code>管理全局的<code>mspan</code>供所有线程使用；<code>mheap</code>管理<code>Go</code>的所有动态分配内存。</li>
+<li>一般小对象通过<code>mspan</code>分配内存；大对象则直接由<code>mheap</code>分配内存。</li>
+</ul>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/Oj_Hy57cD/" class="tag">
+                    Go语言学习笔记
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/aa1vxy4S8/" class="tag">
+                    go
+                  </a>
+                
+              </div>
+            
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

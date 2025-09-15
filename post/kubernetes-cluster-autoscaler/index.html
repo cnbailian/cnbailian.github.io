@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>Kubernetes Cluster Autoscaler | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="当我们使用 Kubernetes 部署应用后，会发现如果用户增长速度超过预期，以至于计算资源不够时，你会怎么做呢？Kubernetes 给出的解决方案就是：自动伸缩（auto-scaling），通过自动伸缩组件之间的配合，可以 7*24 小..." />
+    <meta name="keywords" content="autoscaler,kubernetes" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">Kubernetes Cluster Autoscaler</h2>
+            <div class="post-date">2020-03-31</div>
+            
+            <div class="post-content" v-pre>
+              <p>当我们使用 Kubernetes 部署应用后，会发现如果用户增长速度超过预期，以至于计算资源不够时，你会怎么做呢？Kubernetes 给出的解决方案就是：自动伸缩（auto-scaling），通过自动伸缩组件之间的配合，可以 7*24 小时的监控着你的集群，动态变化负载，以适应你的用户需求。</p>
+<!--more-->	
+<h2 id="自动伸缩组件">自动伸缩组件</h2>
+<p><strong>水平自动伸缩（Horizontal Pod Autoscaler，HPA）</strong></p>
+<p>HPA 可以基于实时的 CPU 利用率自动伸缩 Replication Controller、Deployment 和 Replica Set 中的 Pod 数量。也可以通过搭配 Metrics Server 基于其他的度量指标。</p>
+<p><strong>垂直自动伸缩（Vertical Pod Autoscaler，VPA）</strong></p>
+<p>VPA 可以基于 Pod 的使用资源来自动设置 Pod 所需资源并且能够在运行时自动调整资源。</p>
+<p><strong>集群自动伸缩（Cluster Autoscaler，CA）</strong></p>
+<p>CA 是一个可以自动伸缩集群 Node 的组件。如果集群中有未被调度的 Pod，它将会自动扩展 Node 来使 Pod 可用，或是在发现集群中的 Node 资源使用率过低时，删除 Node 来节约资源。</p>
+<p><strong>插件伸缩（Addon Resizer）</strong></p>
+<p>这是一个小插件，它以 Sidecar 的形式来垂直伸缩与自己同一个部署中的另一个容器，目前唯一的策略就是根据集群中节点的数量来进行线性扩展。通常与 <a href="https://github.com/kubernetes/kubernetes/blob/master/cluster/addons/metrics-server/metrics-server-deployment.yaml#L66">Metrics Server</a> 配合使用，以保证其可以负担不断扩大的整个集群的 metrics API 服务。</p>
+<p>通过 HPA 伸缩无状态应用，VPA 伸缩有状态应用，CA 保证计算资源，它们的配合使用，构成了一个完整的自动伸缩解决方案。</p>
+<h2 id="cluster-autoscaler-详细介绍">Cluster Autoscaler 详细介绍</h2>
+<p>上面介绍的四个组件中，HPA 是在 kubernetes 代码仓库中的，随着 kubernetes 的版本进行更新发布，不需要部署，可以直接使用。其他的三个组件都在官方社区维护的<a href="https://github.com/kubernetes/autoscaler">仓库</a>中，Cluster Autoscaler 的 v1.0(GA) 版本已经随着 kubernetes 1.8 一起发布，剩下两个则还是 beta 版本。</p>
+<h3 id="部署">部署</h3>
+<p>Cluster Autoscaler 通常需要搭配云厂商使用，它提供了 <code>Cloud Provider</code> 接口供各个云厂商接入，云厂商通过伸缩组（Scaling Group）或节点池（Node Pool）的功能对 ECS 类产品节点进行增加删除等操作。</p>
+<p>目前（v1.18.1）已接入的云厂商：</p>
+<p>**Alicloud：**https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/alicloud/README.md</p>
+<p>**Aws：**https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/aws/README.md</p>
+<p>**Azure：**https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/azure/README.md</p>
+<p>**Baiducloud：**https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/baiducloud/README.md</p>
+<p>**Digitalocean：**https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/digitalocean/README.md</p>
+<p>**GoogleCloud GCE：**https://kubernetes.io/docs/tasks/administer-cluster/cluster-management/#upgrading-google-compute-engine-clusters</p>
+<p>**GoogleCloud GKE：**https://cloud.google.com/kubernetes-engine/docs/concepts/cluster-autoscaler</p>
+<p>**OpenStack Magnum：**https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/magnum/README.md</p>
+<p>**Packet：**https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/packet/README.md</p>
+<p>启动参数列表：https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-are-the-parameters-to-ca</p>
+<h3 id="工作原理">工作原理</h3>
+<p>Cluster Autoscaler 抽象出了一个 <code>NodeGroup</code> 的概念，与之对应的是云厂商的伸缩组服务。Cluster Autoscaler 通过 <code>CloudProvider</code> 提供的 <code>NodeGroup</code> 计算集群内节点资源，以此来进行伸缩。</p>
+<p>在启动后，Cluster Autoscaler 会定期（默认 10s）检查未调度的 Pod 和 Node 的资源使用情况，并进行相应的 <code>Scale UP</code> 和 <code>Scale Down</code> 操作。</p>
+<h4 id="scale-up">Scale UP</h4>
+<p>当 Cluster Autoscaler 发现有 Pod 由于资源不足而无法调度时，就会通过调用 <code>Scale UP</code> 执行扩容操作。</p>
+<p>在 <code>Scale UP</code> 中会只会计算在 <code>NodeGroup</code> 中存在的 Node，我们可以将 Worker Node 统一交由伸缩组进行管理。并且由于伸缩组非同步加入的特性，也会考虑到 Upcoming Node。</p>
+<p>为了业务需要，集群中可能会有不同规格的 Node，我们可以创建多个 <code>NodeGroup</code>，在扩容时会根据 <code>--expander</code> 选项配置指定的策略，选择一个扩容的节点组，支持如下<a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-are-expanders">五种策略</a>：</p>
+<ul>
+<li>**random：**随机选择一个 <code>NodeGroup</code>。如果未指定，则默认为此策略。</li>
+<li>**most-pods：**选择能够调度最多 Pod 的 <code>NodeGroup</code>，比如有的 Pod 未调度是因为 <code>nodeSelector</code>，此策略会优先选择能满足的 <code>NodeGroup</code> 来保证大多数的 Pod 可以被调度。</li>
+<li>**least-waste：**为避免浪费，此策略会优先选择能满足 Pod 需求资源的最小资源类型的 <code>NodeGroup</code>。</li>
+<li>**price：**根据 <code>CloudProvider</code> 提供的价格模型，选择最省钱的 <code>NodeGroup</code>。</li>
+<li>**priority：**通过配置优先级来进行选择，用起来比较麻烦，需要额外的配置，可以看<a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/expander/priority/readme.md">文档</a>。</li>
+</ul>
+<p>如果有需要，也可以平衡相似 <code>NodeGroup</code> 中的	Node 数量，避免 <code>NodeGroup</code> 达到 <code>MaxSize</code> 而导致无法加入新 Node。通过 <code>--balance-similar-node-groups</code> 选项配置，默认为 <code>false</code>。</p>
+<p>再经过一系列的操作后，最终计算出要扩容的 Node 数量及 <code>NodeGroup</code>，使用 <code>CloudProvider</code> 执行 <code>IncreaseSize</code> 操作，增加云厂商的伸缩组大小，从而完成扩容操作。</p>
+<p><em>文字表达能力不足，如果有不清晰的地方，可以参考下面的 <a href="#ScaleUP%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90">ScaleUP 源码解析</a>。</em></p>
+<h4 id="scale-down">Scale Down</h4>
+<p>缩容是一个可选的功能，通过 <code>--scale-down-enabled</code> 选项配置，默认为 <code>true</code>。</p>
+<p>在 Cluster Autoscaler 监控 Node 资源时，如果发现有 Node 满足以下三个条件时，就会标记这个 Node 为 <code>unneeded</code>：</p>
+<ul>
+<li>Node 上运行的所有的 Pod 的 Cpu 和内存之和小于该 Node 可分配容量的 50%。可通过 <code>--scale-down-utilization-threshold</code> 选项改变这个配置。</li>
+<li>Node 上所有的 Pod 都可以被调度到其他节点。</li>
+<li>Node 没有表示不可缩容的 annotaition。</li>
+</ul>
+<p>如果一个 Node 被标记为 <code>unneeded</code> 超过 10 分钟（可通过 <code>--scale-down-unneeded-time</code> 选项配置），则使用 <code>CloudProvider</code> 执行 <code>DeleteNodes</code> 操作将其删除。一次最多删除一个 <code>unneeded Node</code>，但空 Node 可以批量删除，每次最多删除 10 个（通过 <code>----max-empty-bulk-delete</code> 选项配置）。</p>
+<p>实际上并不是只有这一个判定条件，还会有其他的条件来阻止删除这个 Node，比如 <code>NodeGroup</code> 已达到 <code>MinSize</code>，或在过去的 10 分钟内有过一次 <code>Scale UP</code> 操作（通过 <code>--scale-down-delay-after-add</code> 选项配置）等等，更详细可查看<a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-scale-down-work">文档</a>。</p>
+<p>Cluster Autoscaler 的工作机制很复杂，但其中大部分都能通过 flags 进行配置，如果有需要，请详细阅读文档：https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md</p>
+<h2 id="如何实现-cloudprovider">如何实现 CloudProvider</h2>
+<p>如果使用上述中已实现接入的云厂商，只需要通过 <code>--cloud-provider</code> 选项指定来自哪个云厂商就可以，如果想要对接自己的 IaaS 或有特定的业务逻辑，就需要自己实现 <code>CloudProvider Interface</code> 与 <code>NodeGroupInterface</code>。并将其注册到 <code>builder</code> 中，用于通过 <code>--cloud-provider</code> 参数指定。</p>
+<p><code>builder</code> 在 <code>cloudprovider/builder</code> 中的 <a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/builder/builder_all.go">builder_all.go</a> 中注册，也可以在其中新建一个自己的 <code>build</code>，通过 go 文件的 <code>+build</code> 编译参数来指定使用的 <code>CloudProvider</code>。</p>
+<p><code>CloudProvider</code> 接口与 <code>NodeGroup</code> 接口在 <a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/cloud_provider.go">cloud_provider.go</a> 中定义，其中需要注意的是 <code>Refresh</code> 方法，它会在每一次循环（默认 10 秒）的开始时调用，可在此时请求接口并刷新 <code>NodeGroup</code> 状态，通常的做法是增加一个 <code>manager</code> 用于管理状态。有不理解的部分可参考其他 <code>CloudProvider</code> 的实现。</p>
+<pre><code>type CloudProvider interface {
+	// Name returns name of the cloud provider.
+	Name() string
+
+	// NodeGroups returns all node groups configured for this cloud provider.
+	// 会在一此循环中多次调用此方法，所以不适合每次都请求云厂商服务，可以在 Refresh 时存储状态
+	NodeGroups() []NodeGroup
+
+	// NodeGroupForNode returns the node group for the given node, nil if the node
+	// should not be processed by cluster autoscaler, or non-nil error if such
+	// occurred. Must be implemented.
+	// 同上
+	NodeGroupForNode(*apiv1.Node) (NodeGroup, error)
+
+	// Pricing returns pricing model for this cloud provider or error if not available.
+	// Implementation optional.
+	// 如果不使用 price expander 就可以不实现此方法
+	Pricing() (PricingModel, errors.AutoscalerError)
+
+	// GetAvailableMachineTypes get all machine types that can be requested from the cloud provider.
+	// Implementation optional.
+	// 没用，不需要实现
+	GetAvailableMachineTypes() ([]string, error)
+
+	// NewNodeGroup builds a theoretical node group based on the node definition provided. The node group is not automatically
+	// created on the cloud provider side. The node group is not returned by NodeGroups() until it is created.
+	// Implementation optional.
+	// 通常情况下，不需要实现此方法，但如果你需要 ClusterAutoscaler 创建一个默认的 NodeGroup 的话，也可以实现。
+	// 但其实更好的做法是将默认 NodeGroup 写入云端的伸缩组
+	NewNodeGroup(machineType string, labels map[string]string, systemLabels map[string]string,
+		taints []apiv1.Taint, extraResources map[string]resource.Quantity) (NodeGroup, error)
+
+	// GetResourceLimiter returns struct containing limits (max, min) for resources (cores, memory etc.).
+	// 资源限制对象，会在 build 时传入，通常情况下不需要更改，除非在云端有显示的提示用户更改的地方，否则使用时会迷惑用户
+	GetResourceLimiter() (*ResourceLimiter, error)
+
+	// GPULabel returns the label added to nodes with GPU resource.
+	// GPU 相关，如果集群中有使用 GPU 资源，需要返回对应内容。 hack: we assume anything which is not cpu/memory to be a gpu.
+	GPULabel() string
+
+	// GetAvailableGPUTypes return all available GPU types cloud provider supports.
+	// 同上
+	GetAvailableGPUTypes() map[string]struct{}
+
+	// Cleanup cleans up open resources before the cloud provider is destroyed, i.e. go routines etc.
+	// CloudProvider 只会在启动时被初始化一次，如果每次循环后有需要清除的内容，在这里处理
+	Cleanup() error
+
+	// Refresh is called before every main loop and can be used to dynamically update cloud provider state.
+	// In particular the list of node groups returned by NodeGroups can change as a result of CloudProvider.Refresh().
+	// 会在 StaticAutoscaler RunOnce 中被调用
+	Refresh() error
+}
+// NodeGroup contains configuration info and functions to control a set
+// of nodes that have the same capacity and set of labels.
+type NodeGroup interface {
+	// MaxSize returns maximum size of the node group.
+	MaxSize() int
+
+	// MinSize returns minimum size of the node group.
+	MinSize() int
+
+	// TargetSize returns the current target size of the node group. It is possible that the
+	// number of nodes in Kubernetes is different at the moment but should be equal
+	// to Size() once everything stabilizes (new nodes finish startup and registration or
+	// removed nodes are deleted completely). Implementation required.
+	// 响应的是伸缩组的节点数，并不一定与 kubernetes 中的节点数保持一致
+	TargetSize() (int, error)
+
+	// IncreaseSize increases the size of the node group. To delete a node you need
+	// to explicitly name it and use DeleteNode. This function should wait until
+	// node group size is updated. Implementation required.
+	// 扩容的方法，增加伸缩组的节点数
+	IncreaseSize(delta int) error
+
+	// DeleteNodes deletes nodes from this node group. Error is returned either on
+	// failure or if the given node doesn't belong to this node group. This function
+	// should wait until node group size is updated. Implementation required.
+	// 删除的节点一定要在该节点组中
+	DeleteNodes([]*apiv1.Node) error
+
+	// DecreaseTargetSize decreases the target size of the node group. This function
+	// doesn't permit to delete any existing node and can be used only to reduce the
+	// request for new nodes that have not been yet fulfilled. Delta should be negative.
+	// It is assumed that cloud provider will not delete the existing nodes when there
+	// is an option to just decrease the target. Implementation required.
+	// 当 ClusterAutoscaler 发现 kubernetes 节点数与伸缩组的节点数长时间不一致，会调用此方法来调整
+	DecreaseTargetSize(delta int) error
+
+	// Id returns an unique identifier of the node group.
+	Id() string
+
+	// Debug returns a string containing all information regarding this node group.
+	Debug() string
+
+	// Nodes returns a list of all nodes that belong to this node group.
+	// It is required that Instance objects returned by this method have Id field set.
+	// Other fields are optional.
+	// This list should include also instances that might have not become a kubernetes node yet.
+	// 返回伸缩组中的所有节点，哪怕它还没有成为 kubernetes 的节点
+	Nodes() ([]Instance, error)
+
+	// TemplateNodeInfo returns a schedulernodeinfo.NodeInfo structure of an empty
+	// (as if just started) node. This will be used in scale-up simulations to
+	// predict what would a new node look like if a node group was expanded. The returned
+	// NodeInfo is expected to have a fully populated Node object, with all of the labels,
+	// capacity and allocatable information as well as all pods that are started on
+	// the node by default, using manifest (most likely only kube-proxy). Implementation optional.
+	// ClusterAutoscaler 会将节点信息与节点组对应，来判断资源条件，如果是一个空的节点组，那么就会通过此方法来虚拟一个节点信息。
+	TemplateNodeInfo() (*schedulernodeinfo.NodeInfo, error)
+
+	// Exist checks if the node group really exists on the cloud provider side. Allows to tell the
+	// theoretical node group from the real one. Implementation required.
+	Exist() bool
+
+	// Create creates the node group on the cloud provider side. Implementation optional.
+	// 与 CloudProvider.NewNodeGroup 配合使用
+	Create() (NodeGroup, error)
+
+	// Delete deletes the node group on the cloud provider side.
+	// This will be executed only for autoprovisioned node groups, once their size drops to 0.
+	// Implementation optional.
+	Delete() error
+
+	// Autoprovisioned returns true if the node group is autoprovisioned. An autoprovisioned group
+	// was created by CA and can be deleted when scaled to 0.
+	Autoprovisioned() bool
+}
+</code></pre>
+<h2 id="scaleup-源码解析">ScaleUP 源码解析</h2>
+<pre><code>func ScaleUp(context *context.AutoscalingContext, processors *ca_processors.AutoscalingProcessors, clusterStateRegistry *clusterstate.ClusterStateRegistry, unschedulablePods []*apiv1.Pod, nodes []*apiv1.Node, daemonSets []*appsv1.DaemonSet, nodeInfos map[string]*schedulernodeinfo.NodeInfo, ignoredTaints taints.TaintKeySet) (*status.ScaleUpStatus, errors.AutoscalerError) {
+	
+	......
+	// 验证当前集群中所有 ready node 是否来自于 nodeGroups，取得所有非组内的 node
+	nodesFromNotAutoscaledGroups, err := utils.FilterOutNodesFromNotAutoscaledGroups(nodes, context.CloudProvider)
+	if err != nil {
+		return &amp;status.ScaleUpStatus{Result: status.ScaleUpError}, err.AddPrefix(&quot;failed to filter out nodes which are from not autoscaled groups: &quot;)
+	}
+
+	nodeGroups := context.CloudProvider.NodeGroups()
+	gpuLabel := context.CloudProvider.GPULabel()
+	availableGPUTypes := context.CloudProvider.GetAvailableGPUTypes()
+
+	// 资源限制对象，会在 build cloud provider 时传入
+	// 如果有需要可在 CloudProvider 中自行更改，但不建议改动，会对用户造成迷惑
+	resourceLimiter, errCP := context.CloudProvider.GetResourceLimiter()
+	if errCP != nil {
+		return &amp;status.ScaleUpStatus{Result: status.ScaleUpError}, errors.ToAutoscalerError(
+			errors.CloudProviderError,
+			errCP)
+	}
+
+	// 计算资源限制
+	// nodeInfos 是所有拥有节点组的节点与示例节点的映射
+	// 示例节点会优先考虑真实节点的数据，如果 NodeGroup 中还没有真实节点的部署，则使用 Template 的节点数据
+	scaleUpResourcesLeft, errLimits := computeScaleUpResourcesLeftLimits(context.CloudProvider, nodeGroups, nodeInfos, nodesFromNotAutoscaledGroups, resourceLimiter)
+	if errLimits != nil {
+		return &amp;status.ScaleUpStatus{Result: status.ScaleUpError}, errLimits.AddPrefix(&quot;Could not compute total resources: &quot;)
+	}
+
+	// 根据当前节点与 NodeGroups 中的节点来计算会有多少节点即将加入集群中
+	// 由于云服务商的伸缩组 increase size 操作并不是同步加入 node，所以将其统计，以便于后面计算节点资源
+	upcomingNodes := make([]*schedulernodeinfo.NodeInfo, 0)
+	for nodeGroup, numberOfNodes := range clusterStateRegistry.GetUpcomingNodes() {
+		......
+	}
+	klog.V(4).Infof(&quot;Upcoming %d nodes&quot;, len(upcomingNodes))
+
+	// 最终会进入选择的节点组
+	expansionOptions := make(map[string]expander.Option, 0)
+	......
+	// 出于某些限制或错误导致不能加入新节点的节点组，例如节点组已达到 MaxSize
+	skippedNodeGroups := map[string]status.Reasons{}
+	// 综合各种情况，筛选出节点组
+	for _, nodeGroup := range nodeGroups {
+	......
+	}
+	if len(expansionOptions) == 0 {
+		klog.V(1).Info(&quot;No expansion options&quot;)
+		return &amp;status.ScaleUpStatus{
+			Result:					status.ScaleUpNoOptionsAvailable,
+			PodsRemainUnschedulable: getRemainingPods(podEquivalenceGroups, skippedNodeGroups),
+			ConsideredNodeGroups:	nodeGroups,
+		}, nil
+	}
+
+	......
+	// 选择一个最佳的节点组进行扩容，expander 用于选择一个合适的节点组进行扩容，默认为 RandomExpander，flag: expander
+	// random 随机选一个，适合只有一个节点组
+	// most-pods 选择能够调度最多 pod 的节点组，比如有 noSchedulerPods 是有 nodeSelector 的，它会优先选择此类节点组以满足大多数 pod 的需求
+	// least-waste 优先选择能满足 pod 需求资源的最小资源类型的节点组
+	// price 根据价格模型，选择最省钱的
+	// priority 根据优先级选择
+	bestOption := context.ExpanderStrategy.BestOption(options, nodeInfos)
+	if bestOption != nil &amp;&amp; bestOption.NodeCount &gt; 0 {
+	......
+		newNodes := bestOption.NodeCount
+
+		// 考虑到 upcomingNodes, 重新计算本次新加入节点
+		if context.MaxNodesTotal &gt; 0 &amp;&amp; len(nodes)+newNodes+len(upcomingNodes) &gt; context.MaxNodesTotal {
+			klog.V(1).Infof(&quot;Capping size to max cluster total size (%d)&quot;, context.MaxNodesTotal)
+			newNodes = context.MaxNodesTotal - len(nodes) - len(upcomingNodes)
+			if newNodes &lt; 1 {
+				return &amp;status.ScaleUpStatus{Result: status.ScaleUpError}, errors.NewAutoscalerError(
+					errors.TransientError,
+					&quot;max node total count already reached&quot;)
+			}
+		}
+
+		createNodeGroupResults := make([]nodegroups.CreateNodeGroupResult, 0)
+	
+		// 如果节点组在云服务商端处不存在，会尝试创建根据现有信息重新创建一个云端节点组
+		// 但是目前所有的 CloudProvider 实现都没有允许这种操作，这好像是个多余的方法
+		// 云服务商不想，也不应该将云端节点组的创建权限交给 ClusterAutoscaler
+		if !bestOption.NodeGroup.Exist() {
+			oldId := bestOption.NodeGroup.Id()
+			createNodeGroupResult, err := processors.NodeGroupManager.CreateNodeGroup(context, bestOption.NodeGroup)
+		......
+		}
+
+		// 得到最佳节点组的示例节点
+		nodeInfo, found := nodeInfos[bestOption.NodeGroup.Id()]
+		if !found {
+			// This should never happen, as we already should have retrieved
+			// nodeInfo for any considered nodegroup.
+			klog.Errorf(&quot;No node info for: %s&quot;, bestOption.NodeGroup.Id())
+			return &amp;status.ScaleUpStatus{Result: status.ScaleUpError, CreateNodeGroupResults: createNodeGroupResults}, errors.NewAutoscalerError(
+				errors.CloudProviderError,
+				&quot;No node info for best expansion option!&quot;)
+		}
+
+		// 根据 CPU、Memory及可能存在的 GPU 资源（hack: we assume anything which is not cpu/memory to be a gpu.），计算出需要多少个 Nodes
+		newNodes, err = applyScaleUpResourcesLimits(context.CloudProvider, newNodes, scaleUpResourcesLeft, nodeInfo, bestOption.NodeGroup, resourceLimiter)
+		if err != nil {
+			return &amp;status.ScaleUpStatus{Result: status.ScaleUpError, CreateNodeGroupResults: createNodeGroupResults}, err
+		}
+
+		// 需要平衡的节点组
+		targetNodeGroups := []cloudprovider.NodeGroup{bestOption.NodeGroup}
+		// 如果需要平衡节点组，根据 balance-similar-node-groups flag 设置。
+		// 检测相似的节点组，并平衡它们之间的节点数量
+		if context.BalanceSimilarNodeGroups {
+		......
+		}
+		// 具体平衡策略可以看 (b *BalancingNodeGroupSetProcessor) BalanceScaleUpBetweenGroups 方法
+		scaleUpInfos, typedErr := processors.NodeGroupSetProcessor.BalanceScaleUpBetweenGroups(context, targetNodeGroups, newNodes)
+		if typedErr != nil {
+			return &amp;status.ScaleUpStatus{Result: status.ScaleUpError, CreateNodeGroupResults: createNodeGroupResults}, typedErr
+		}
+		klog.V(1).Infof(&quot;Final scale-up plan: %v&quot;, scaleUpInfos)
+		// 开始扩容，通过 IncreaseSize 扩容
+		for _, info := range scaleUpInfos {
+			typedErr := executeScaleUp(context, clusterStateRegistry, info, gpu.GetGpuTypeForMetrics(gpuLabel, availableGPUTypes, nodeInfo.Node(), nil), now)
+			if typedErr != nil {
+				return &amp;status.ScaleUpStatus{Result: status.ScaleUpError, CreateNodeGroupResults: createNodeGroupResults}, typedErr
+			}
+		}
+		......
+	}
+	......
+}
+
+
+</code></pre>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/r8Qp_1n2i/" class="tag">
+                    autoscaler
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/rKzMZCB0T/" class="tag">
+                    kubernetes
+                  </a>
+                
+              </div>
+            
+            
+              <div class="next-post">
+                <div class="next">下一篇</div>
+                <a href="https://cnbailian.github.io/post/dynamic-provisioning-of-kubernetes/">
+                  <h3 class="post-title">
+                    Kubernetes 的 Dynamic Provisioning 实现
+                  </h3>
+                </a>
+              </div>
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>从 SampleController 项目看 kubernetes controller 的设计——笔记 | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="Informer 和 Controller 工作流程总结。
+
+设计理念
+client-go informer
+
+Kubernetes Resource Type
+Scheme
+Scheme 提供了 Go type 与对应 GVK 的映射。即..." />
+    <meta name="keywords" content="kubernetes" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">从 SampleController 项目看 kubernetes controller 的设计——笔记</h2>
+            <div class="post-date">2021-05-08</div>
+            
+            <div class="post-content" v-pre>
+              <p>Informer 和 Controller 工作流程总结。</p>
+<!--more-->
+<h2 id="设计理念">设计理念</h2>
+<p>client-go informer<br>
+<img src="https://image.baidu.com/search/down?url=https://tva1.sinaimg.cn/large/0081Kckwly1glrrw7x90hj31va0ton44.jpg" alt="Kubernetes Informer" loading="lazy"></p>
+<h3 id="kubernetes-resource-type">Kubernetes Resource Type</h3>
+<p><strong>Scheme</strong></p>
+<p>Scheme 提供了 Go type 与对应 GVK 的映射。即给定 Go type 就知道对应 GVK，给定 GVK 就知道对应 Go type</p>
+<h3 id="informer">Informer</h3>
+<p><strong>list/watch 机制</strong></p>
+<p>在 kubernetes 的设计中，使用 etcd 存储数据，apiserver 作为统一入口，任何对资源的操作都必须经过 apiserver。</p>
+<p>apiserver 对资源提供了 list watch 两个接口。list 基于 HTTP 短链接实现，用于获取资源列表。watch 基于 HTTP 长链接实现，用于获取资源的变更。</p>
+<p>watch 基于 HTTP chunked 实现持久链接。服务端每次传输资源的事件信息。</p>
+<p>设计理念</p>
+<p>通过 list watch 的组合，保证了消息的可靠性，避免因为消息丢失而造成状态不一致场景。</p>
+<p>消息必须是实时的，每当 apiserver 产生资源变更事件，都会将事件实时的推送给客户端，保证了消息的实时性。</p>
+<p>kubernetes 在每个资源的事件都有一个 resourceVersion 属性，这个属性是递增的数字，所以当客户端并发处理同一资源的事件时，它可以通过对比 resourceVersion 来保证消息的顺序性。</p>
+<p>通过 list 获取资源，写入 cache，然后通过 watch 维护缓存，避免了频繁获取资源的性能损耗。通过 resyncPeriod 维护 list，避免发生不一致现象。</p>
+<p><strong>informer 工作流程</strong></p>
+<ol>
+<li>Informer 使用 Reflector 包建立与 apiserver 的连接。Reflector 使用 ListAndWatch 方法监听该分类下所有资源对象，list 首先会将 resourceVersion 设为 0，然后通过 watch 监听该 resourceVersion 之后的所有变化，若中途出现异常，Reflector 会从断开处尝试重现所有变化。当 Reflector watch 到资源对象的事件通知时，会将该事件与它对应的资源对象这个组合（被称为增量 Delta），放入 DeltaFIFO 队列中。</li>
+<li>Informer 会 pop 这个 DeltaFIFO 队列中的 Deltas，通过 Indexer 根据事件类型更新缓存。</li>
+<li>同时也会去调用事先注册的 ResourceEventHandler 回调函数进行处理。</li>
+</ol>
+<p><strong>Custom Controller 工作流程</strong></p>
+<ol>
+<li>在 ResourceEventhandler 回调函数中，其实只是做了一些很简单的过滤，然后将关心变更的 Object 放在 workqueue 里面</li>
+<li>Controller 从 workqueue 里面取出 Object，启动一个 worker 来执行自己的业务逻辑</li>
+<li>在 worker 中就可以使用 lister 来获取 resource，而不用频繁的访问 apiserver，因为 apiserver 中的 resource 的变更都会反映到本地的 cache 中</li>
+</ol>
+<h2 id="源码">源码</h2>
+<p>结合《Kubernetes 源码剖析》和 sampleController 的实际使用来学习 Informer</p>
+<h3 id="使用">使用</h3>
+<p>通过 <code>k8s.io/client-go/informers</code> 或生成的 <code>informers</code> 调用 <code>NewSharedInformerFactory</code> 创建 InformerFactory。</p>
+<pre><code class="language-go">kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
+exampleInformerFactory := informers.NewSharedInformerFactory(exampleClient, time.Second*30)
+</code></pre>
+<p>对具体的 Resources 添加 Events，也就是事件回调函数，正常情况下，在回调中需要添加到 workQueue 中</p>
+<p>事件分为三种：Added、Updated、Deleted。那么 kubebuilder 的 generic 是什么...</p>
+<pre><code class="language-go">kubeInformerFactory.Apps().V1().Deployments().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.handleObject,
+		UpdateFunc: func(old, new interface{}) {
+			newDepl := new.(*appsv1.Deployment)
+			oldDepl := old.(*appsv1.Deployment)
+			if newDepl.ResourceVersion == oldDepl.ResourceVersion {
+				// Periodic resync will send update events for all known Deployments.
+				// Two different versions of the same Deployment will always have different RVs.
+				return
+			}
+			controller.handleObject(new)
+		},
+		DeleteFunc: controller.handleObject,
+	})
+
+exampleInformerFactory.Samplecontroller().V1alpha1().Foos().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueFoo,
+		UpdateFunc: func(old, new interface{}) {
+			controller.enqueueFoo(new)
+		},
+	})
+
+
+func (c *Controller) enqueueFoo(obj interface{}) {
+	var key string
+	var err error
+	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	c.workqueue.Add(key)
+}
+</code></pre>
+<p>最后 start，因为 informer 是持久运行的，所以需要通过 channel 来发送结束信号</p>
+<pre><code class="language-go">kubeInformerFactory.Start(stopCh)
+exampleInformerFactory.Start(stopCh)
+</code></pre>
+<h3 id="sharedinformerfactory">SharedInformerFactory</h3>
+<p><code>informers.NewSharedInformerFactory</code> 函数实例化了 <code>SharedInformerFactory</code> 对象，它接收两个参数：第1个参数 <code>clientset</code> 是用于与Kubernetes API Server交互的客户端，第2个参数 <code>time.Minute</code> 用于设置多久进行一次 resync（重新同步），resync 会周期性地执行 List 操作，将所有的资源存放在 <code>Informer Store</code> 中，如果该参数为0，则禁用 resync 功能。</p>
+<pre><code class="language-go">func NewSharedInformerFactory(client kubernetes.Interface, defaultResync time.Duration) SharedInformerFactory {
+	return NewSharedInformerFactoryWithOptions(client, defaultResync)
+}
+func NewSharedInformerFactoryWithOptions(client kubernetes.Interface, defaultResync time.Duration, options ...SharedInformerOption) SharedInformerFactory {
+	factory := &amp;sharedInformerFactory{
+		client:           client,
+		namespace:        v1.NamespaceAll,
+		defaultResync:    defaultResync,
+		informers:        make(map[reflect.Type]cache.SharedIndexInformer),
+		startedInformers: make(map[reflect.Type]bool),
+		customResync:     make(map[reflect.Type]time.Duration),
+	}
+
+	// Apply all options
+  // 如果不熟悉这种参数传递模式，可以参考 Rob Pike 的文章：https://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html
+  // 相关文章中文版：https://driverzhang.github.io/post/golang友好的设计api参数可选项/
+	for _, opt := range options {
+		factory = opt(factory)
+	}
+
+	return factory
+}
+</code></pre>
+<p><strong>Informer Shared 机制</strong></p>
+<p>从上面的代码中可以看出，我们 New 的是一个 SharedInformerFactory，它是可以被共享使用的。</p>
+<p>Shared Informer Factory 可以使同一类资源共享一个 Informer，这样可以节约很多资源。</p>
+<pre><code class="language-go">// 实际上是调用 factory 的 InformerFor 方法
+kubeInformerFactory.Apps().V1().Deployments().Informer()
+
+func (f *deploymentInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&amp;appsv1.Deployment{}, f.defaultInformer)
+}
+
+type sharedInformerFactory struct {
+  ......
+	informers map[reflect.Type]cache.SharedIndexInformer
+  ......
+}
+
+// InformerFor 通过 map 数据结构存储 Informer，多次添加也会共享一个 informer。
+func (f *sharedInformerFactory) InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	informerType := reflect.TypeOf(obj)
+	informer, exists := f.informers[informerType]
+	if exists {
+		return informer
+	}
+
+	resyncPeriod, exists := f.customResync[informerType]
+	if !exists {
+		resyncPeriod = f.defaultResync
+	}
+
+	informer = newFunc(f.client, resyncPeriod)
+	f.informers[informerType] = informer
+
+	return informer
+}
+</code></pre>
+<p>上面可以看出，sharedInformerFactory 的 InformerFor 方法会实例化一个 informer 放入 <code>f.informers</code> 中，看下 deployment 传入的 <code>newFunc</code> 是什么：</p>
+<pre><code class="language-go">// 可以看到，传入的是 deploymentInformer.defaultInformer 的闭包
+func (f *deploymentInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&amp;appsv1.Deployment{}, f.defaultInformer)
+}
+
+// defaultInformer 的参数与 NewSharedInformerFactory 的参数一致，用途也一致
+func (f *deploymentInformer) defaultInformer(client kubernetes.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredDeploymentInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+}
+
+// 实例化 SharedIndexInformer，传入对应资源的 List and Watch
+func NewFilteredDeploymentInformer(client kubernetes.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+	return cache.NewSharedIndexInformer(
+		&amp;cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&amp;options)
+				}
+				return client.AppsV1().Deployments(namespace).List(context.TODO(), options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&amp;options)
+				}
+				return client.AppsV1().Deployments(namespace).Watch(context.TODO(), options)
+			},
+		},
+		&amp;appsv1.Deployment{},
+		resyncPeriod,
+		indexers,
+	)
+}
+</code></pre>
+<h3 id="sharedindexinformer">SharedIndexInformer</h3>
+<p>最后，来看下 informer 的 Start，以及 informer 如何利用 List and Watch。</p>
+<pre><code class="language-go">func (f *sharedInformerFactory) Start(stopCh &lt;-chan struct{}) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	for informerType, informer := range f.informers {
+		if !f.startedInformers[informerType] {
+			go informer.Run(stopCh)
+			f.startedInformers[informerType] = true
+		}
+	}
+}
+
+// 从上面的代码中可以看到 informer 是传入的 SharedIndexInformer
+// ShareIndexInformer 有三个主要组件：
+// 第一个 indexed local cache；Indexer
+// 第二个是 controller，它使用 ListerWatcher 获取资源，并将其推送到 DeltaFIFO 中
+// 同时从 FIFO 中取出 Deltas values，并通过 sharedIndexInformer::HandleDeltas 方法处理
+// 每个 Deltas，都会更新 local cache，并将相关通知发送给 sharedProcessor
+// 第三个组件就是 sharedProcessor，它会负责转发这些通知给 listeners
+func (s *sharedIndexInformer) Run(stopCh &lt;-chan struct{}) {
+	defer utilruntime.HandleCrash()
+
+  // deltaFIFO 可以分开理解
+  // FIFO 是一个先进先出的队列
+  // Delta 代表队列中存储的是 Delta 对象，Delta 是一个资源对象存储，它可以保存资源对象的操作类型
+  // 例如 Added、Updated、Deleted、Sync 等操作类型
+	fifo := NewDeltaFIFOWithOptions(DeltaFIFOOptions{
+		KnownObjects:          s.indexer,
+		EmitDeltaTypeReplaced: true,
+	})
+
+	cfg := &amp;Config{
+		Queue:            fifo,
+		ListerWatcher:    s.listerWatcher,
+		ObjectType:       s.objectType,
+		FullResyncPeriod: s.resyncCheckPeriod,
+		RetryOnError:     false,
+		ShouldResync:     s.processor.shouldResync,
+
+		Process:           s.HandleDeltas,
+		WatchErrorHandler: s.watchErrorHandler,
+	}
+
+	func() {
+		s.startedLock.Lock()
+		defer s.startedLock.Unlock()
+		// 实例化 controller 组件
+		s.controller = New(cfg)
+		s.controller.(*controller).clock = s.clock
+		s.started = true
+	}()
+
+  // 启动 processor 组件
+	// Separate stop channel because Processor should be stopped strictly after controller
+	processorStopCh := make(chan struct{})
+	var wg wait.Group
+	defer wg.Wait()              // Wait for Processor to stop
+	defer close(processorStopCh) // Tell Processor to stop
+	wg.StartWithChannel(processorStopCh, s.cacheMutationDetector.Run)
+	wg.StartWithChannel(processorStopCh, s.processor.run)
+
+	defer func() {
+		s.startedLock.Lock()
+		defer s.startedLock.Unlock()
+		s.stopped = true // Don't want any new listeners
+	}()
+	s.controller.Run(stopCh)
+}
+</code></pre>
+<h4 id="reflector">Reflector</h4>
+<p>controller 组件的主要功能就是通过 reflector 完成。</p>
+<p>Reflector 用于监控指定资源，当监控的资源发生变化时，触发相应的变更事件，例如 Added、Updated、Deleted，并将其资源对象存放到 DeltaFIFO 中。</p>
+<pre><code class="language-go">func (c *controller) Run(stopCh &lt;-chan struct{}) {
+	defer utilruntime.HandleCrash()
+	go func() {
+		&lt;-stopCh
+		c.config.Queue.Close()
+	}()
+  // NewReflector 实例化过程中需要传入 ListerWatcher
+  // 这是对应资源对象在实例化 NewSharedIndexInformer 时传入的，实现了对应资源的 List and Watch 接口
+  // Queue 是上面实例化的 DealtaFIFO
+	r := NewReflector(
+		c.config.ListerWatcher,
+		c.config.ObjectType,
+		c.config.Queue,
+		c.config.FullResyncPeriod,
+	)
+	r.ShouldResync = c.config.ShouldResync
+	r.WatchListPageSize = c.config.WatchListPageSize
+	r.clock = c.clock
+	if c.config.WatchErrorHandler != nil {
+		r.watchErrorHandler = c.config.WatchErrorHandler
+	}
+
+	c.reflectorMutex.Lock()
+	c.reflector = r
+	c.reflectorMutex.Unlock()
+
+	var wg wait.Group
+  // 启动 reflector
+	wg.StartWithChannel(stopCh, r.Run)
+  // 启动 processor loop
+	wait.Until(c.processLoop, time.Second, stopCh)
+	wg.Wait()
+}
+</code></pre>
+<p><strong>Reflector run</strong></p>
+<pre><code class="language-go">func (r *Reflector) Run(stopCh &lt;-chan struct{}) {
+	klog.V(2).Infof(&quot;Starting reflector %s (%s) from %s&quot;, r.expectedTypeName, r.resyncPeriod, r.name)
+	wait.BackoffUntil(func() {
+		if err := r.ListAndWatch(stopCh); err != nil {
+			r.watchErrorHandler(r, err)
+		}
+	}, r.backoffManager, true, stopCh)
+	klog.V(2).Infof(&quot;Stopping reflector %s (%s) from %s&quot;, r.expectedTypeName, r.resyncPeriod, r.name)
+}
+
+// ListAndWatch 函数实现可分为两部分：第一部分获取列表数据，第二部分监控资源对象
+func (r *Reflector) ListAndWatch(stopCh &lt;-chan struct{}) error {
+	klog.V(3).Infof(&quot;Listing and watching %v from %s&quot;, r.expectedTypeName, r.name)
+	var resourceVersion string
+
+	options := metav1.ListOptions{ResourceVersion: r.relistResourceVersion()}
+  // 第一部分：获取列表数据
+	if err := func() error {
+		initTrace := trace.New(&quot;Reflector ListAndWatch&quot;, trace.Field{&quot;name&quot;, r.name})
+		defer initTrace.LogIfLong(10 * time.Second)
+		var list runtime.Object
+		var paginatedResult bool
+		var err error
+		listCh := make(chan struct{}, 1)
+		panicCh := make(chan interface{}, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					panicCh &lt;- r
+				}
+			}()
+			// Attempt to gather list in chunks, if supported by listerWatcher, if not, the first
+			// list request will return the full response.
+			pager := pager.New(pager.SimplePageFunc(func(opts metav1.ListOptions) (runtime.Object, error) {
+				return r.listerWatcher.List(opts)
+			}))
+			switch {
+			case r.WatchListPageSize != 0:
+				pager.PageSize = r.WatchListPageSize
+			case r.paginatedResult:
+				// We got a paginated result initially. Assume this resource and server honor
+				// paging requests (i.e. watch cache is probably disabled) and leave the default
+				// pager size set.
+			case options.ResourceVersion != &quot;&quot; &amp;&amp; options.ResourceVersion != &quot;0&quot;:
+				// User didn't explicitly request pagination.
+				//
+				// With ResourceVersion != &quot;&quot;, we have a possibility to list from watch cache,
+				// but we do that (for ResourceVersion != &quot;0&quot;) only if Limit is unset.
+				// To avoid thundering herd on etcd (e.g. on master upgrades), we explicitly
+				// switch off pagination to force listing from watch cache (if enabled).
+				// With the existing semantic of RV (result is at least as fresh as provided RV),
+				// this is correct and doesn't lead to going back in time.
+				//
+				// We also don't turn off pagination for ResourceVersion=&quot;0&quot;, since watch cache
+				// is ignoring Limit in that case anyway, and if watch cache is not enabled
+				// we don't introduce regression.
+				pager.PageSize = 0
+			}
+			// 获取 list 数据，获取资源数据是由 options.ResourcesVersion 参数控制的
+      // 如果 ResourceVersion 为 0，则表示获取所有资源数据；如果 ResourceVersion 非0，则表示根据资源版本号继续获取
+      // 功能类似于断点续传，当传输过程中遇到网络故障导致中断，下次再连接时，会根据资源版本号继续传输未完成的部分
+			list, paginatedResult, err = pager.List(context.Background(), options)
+			if isExpiredError(err) || isTooLargeResourceVersionError(err) {
+				r.setIsLastSyncResourceVersionUnavailable(true)
+				// Retry immediately if the resource version used to list is unavailable.
+				// The pager already falls back to full list if paginated list calls fail due to an &quot;Expired&quot; error on
+				// continuation pages, but the pager might not be enabled, the full list might fail because the
+				// resource version it is listing at is expired or the cache may not yet be synced to the provided
+				// resource version. So we need to fallback to resourceVersion=&quot;&quot; in all to recover and ensure
+				// the reflector makes forward progress.
+				list, paginatedResult, err = pager.List(context.Background(), metav1.ListOptions{ResourceVersion: r.relistResourceVersion()})
+			}
+			close(listCh)
+		}()
+		select {
+		case &lt;-stopCh:
+			return nil
+		case r := &lt;-panicCh:
+			panic(r)
+		case &lt;-listCh:
+		}
+		if err != nil {
+			return fmt.Errorf(&quot;failed to list %v: %v&quot;, r.expectedTypeName, err)
+		}
+
+		// We check if the list was paginated and if so set the paginatedResult based on that.
+		// However, we want to do that only for the initial list (which is the only case
+		// when we set ResourceVersion=&quot;0&quot;). The reasoning behind it is that later, in some
+		// situations we may force listing directly from etcd (by setting ResourceVersion=&quot;&quot;)
+		// which will return paginated result, even if watch cache is enabled. However, in
+		// that case, we still want to prefer sending requests to watch cache if possible.
+		//
+		// Paginated result returned for request with ResourceVersion=&quot;0&quot; mean that watch
+		// cache is disabled and there are a lot of objects of a given type. In such case,
+		// there is no need to prefer listing from watch cache.
+		if options.ResourceVersion == &quot;0&quot; &amp;&amp; paginatedResult {
+			r.paginatedResult = true
+		}
+
+		r.setIsLastSyncResourceVersionUnavailable(false) // list was successful
+		initTrace.Step(&quot;Objects listed&quot;)
+		listMetaInterface, err := meta.ListAccessor(list)
+		if err != nil {
+			return fmt.Errorf(&quot;unable to understand list result %#v: %v&quot;, list, err)
+		}
+    // 获取 ResourceVersion，ResourceVersion 非常重要，Kubernetes 中所有的资源都拥有该字段
+    // 它标识当前资源对象的版本号。每次修改资源对象时，apiserver 都会更改 ResourceVersion
+    // 使得 client-go  执行 watch 时可以根据 ResourceVersion 来确定当前对象资源是否发生变化
+		resourceVersion = listMetaInterface.GetResourceVersion()
+		initTrace.Step(&quot;Resource version extracted&quot;)
+    // 将获取到的资源对象转为列表
+		items, err := meta.ExtractList(list)
+		if err != nil {
+			return fmt.Errorf(&quot;unable to understand list result %#v (%v)&quot;, list, err)
+		}
+		initTrace.Step(&quot;Objects extracted&quot;)
+    // 将资源对象存储至 DeltaFIFO，并会替换已存在的对象
+    // 实现是调用传入的 DeltaFIFO 的 Replace 方法
+		if err := r.syncWith(items, resourceVersion); err != nil {
+			return fmt.Errorf(&quot;unable to sync list result: %v&quot;, err)
+		}
+		initTrace.Step(&quot;SyncWith done&quot;)
+		r.setLastSyncResourceVersion(resourceVersion)
+		initTrace.Step(&quot;Resource version updated&quot;)
+		return nil
+	}(); err != nil {
+		return err
+	}
+
+  // 额外部分，resync 机制，如果实例化 ShareIndexInformer 时指定了 resyncPeriod
+  // 此处就会启动一个 gorutine 来定期强制同步资源，也会同步给 DeltaFIFO
+	resyncerrc := make(chan error, 1)
+	cancelCh := make(chan struct{})
+	defer close(cancelCh)
+	go func() {
+		resyncCh, cleanup := r.resyncChan()
+		defer func() {
+			cleanup() // Call the last one written into cleanup
+		}()
+		for {
+			select {
+			case &lt;-resyncCh:
+			case &lt;-stopCh:
+				return
+			case &lt;-cancelCh:
+				return
+			}
+			if r.ShouldResync == nil || r.ShouldResync() {
+				klog.V(4).Infof(&quot;%s: forcing resync&quot;, r.name)
+				if err := r.store.Resync(); err != nil {
+					resyncerrc &lt;- err
+					return
+				}
+			}
+			cleanup()
+			resyncCh, cleanup = r.resyncChan()
+		}
+	}()
+
+  // 第二部分：监控资源对象
+	for {
+		// give the stopCh a chance to stop the loop, even in case of continue statements further down on errors
+		select {
+		case &lt;-stopCh:
+			return nil
+		default:
+		}
+
+		timeoutSeconds := int64(minWatchTimeout.Seconds() * (rand.Float64() + 1.0))
+		options = metav1.ListOptions{
+			ResourceVersion: resourceVersion,
+      // typo issue: wachers =&gt; watchers
+			// We want to avoid situations of hanging watchers. Stop any wachers that do not
+			// receive any events within the timeout window.
+			TimeoutSeconds: &amp;timeoutSeconds,
+			// To reduce load on kube-apiserver on watch restarts, you may enable watch bookmarks.
+			// Reflector doesn't assume bookmarks are returned at all (if the server do not support
+			// watch bookmarks, it will ignore this field).
+			AllowWatchBookmarks: true,
+		}
+
+		// start the clock before sending the request, since some proxies won't flush headers until after the first watch event is sent
+		start := r.clock.Now()
+    // Watch 实际上调用了对应资源 Client 的 Watch 函数，通过 HTTP 协议与 kube-apiserver 建立长连接
+    // Watch 的实现机制是使用 HTTP 的分块传输协议（Chunked Transfer Encoding）
+    // Client watch 方法会返回 watcher 的接口实现，交给下文，通过通道读取数据
+    // 此处如果是 apiserver 未响应的错误，则会重试
+		w, err := r.listerWatcher.Watch(options)
+		if err != nil {
+			// If this is &quot;connection refused&quot; error, it means that most likely apiserver is not responsive.
+			// It doesn't make sense to re-list all objects because most likely we will be able to restart
+			// watch where we ended.
+			// If that's the case begin exponentially backing off and resend watch request.
+			if utilnet.IsConnectionRefused(err) {
+				&lt;-r.initConnBackoffManager.Backoff().C()
+				continue
+			}
+			return err
+		}
+    // watchHandler 负责处理资源的变更事件。当触发 Added、Updated、Deleted 事件时，将对应的资源对象
+    // 更新到本地缓存 DeltaFIFO 中并更新 ResourceVersion 资源版本号
+		if err := r.watchHandler(start, w, &amp;resourceVersion, resyncerrc, stopCh); err != nil {
+			if err != errorStopRequested {
+				switch {
+				case isExpiredError(err):
+					// Don't set LastSyncResourceVersionUnavailable - LIST call with ResourceVersion=RV already
+					// has a semantic that it returns data at least as fresh as provided RV.
+					// So first try to LIST with setting RV to resource version of last observed object.
+					klog.V(4).Infof(&quot;%s: watch of %v closed with: %v&quot;, r.name, r.expectedTypeName, err)
+				default:
+					klog.Warningf(&quot;%s: watch of %v ended with: %v&quot;, r.name, r.expectedTypeName, err)
+				}
+			}
+			return nil
+		}
+	}
+}
+
+// 通过 watcher.ResultChan 得到分段传输的数据，根据资源对象类型 DeltaFIFO 执行相应动作。
+func (r *Reflector) watchHandler(start time.Time, w watch.Interface, resourceVersion *string, errc chan error, stopCh &lt;-chan struct{}) error {
+	eventCount := 0
+
+	// Stopping the watcher should be idempotent and if we return from this function there's no way
+	// we're coming back in with the same watch interface.
+	defer w.Stop()
+
+loop:
+	for {
+		select {
+		case &lt;-stopCh:
+			return errorStopRequested
+		case err := &lt;-errc:
+			return err
+		case event, ok := &lt;-w.ResultChan():
+			if !ok {
+				break loop
+			}
+      ......
+			newResourceVersion := meta.GetResourceVersion()
+			switch event.Type {
+			case watch.Added:
+        // DeltaFIFO::Add
+				err := r.store.Add(event.Object)
+				if err != nil {
+					utilruntime.HandleError(fmt.Errorf(&quot;%s: unable to add watch event object (%#v) to store: %v&quot;, r.name, event.Object, err))
+				}
+			case watch.Modified:
+        // DeltaFIFO::Update
+				err := r.store.Update(event.Object)
+				if err != nil {
+					utilruntime.HandleError(fmt.Errorf(&quot;%s: unable to update watch event object (%#v) to store: %v&quot;, r.name, event.Object, err))
+				}
+			case watch.Deleted:
+				// TODO: Will any consumers need access to the &quot;last known
+				// state&quot;, which is passed in event.Object? If so, may need
+				// to change this.
+        // 
+        // DeltaFIFO::Delete
+				err := r.store.Delete(event.Object)
+				if err != nil {
+					utilruntime.HandleError(fmt.Errorf(&quot;%s: unable to delete watch event object (%#v) from store: %v&quot;, r.name, event.Object, err))
+				}
+			case watch.Bookmark:
+				// A `Bookmark` means watch has synced here, just update the resourceVersion
+			default:
+				utilruntime.HandleError(fmt.Errorf(&quot;%s: unable to understand watch event %#v&quot;, r.name, event))
+			}
+      ......
+		}
+	}
+  ......
+	return nil
+}
+</code></pre>
+<h4 id="deltafifo">DeltaFIFO</h4>
+<p>接下来看看 DeltaFIFO 的详细操作都有哪些，上面源码中的 Resync、Add、Update 等操作都做了什么。</p>
+<p>现在将代码回到 sharedIndexInformer::Run 方法中:</p>
+<pre><code class="language-go">func (s *sharedIndexInformer) Run(stopCh &lt;-chan struct{}) {
+	......
+	fifo := NewDeltaFIFOWithOptions(DeltaFIFOOptions{
+    // Indexer 是由对应资源 Informer 实例化 SharedIndexInformer 时传入，这个下面会详细再看
+		KnownObjects:          s.indexer,
+		EmitDeltaTypeReplaced: true,
+	})
+  ......
+}
+
+// DeltaFIFO 是一个生产者-消费者队列，其中 Reflector 是生产者，消费者是调用 Pop 方法的任何人
+// 通过 DeltaFIFO 可以一次处理一个资源对象的所有操作，这主要取决与 DeltaFIFO 的存储结构
+// 它通过 queue 字段存储资源对象的 key，该 key 通过 KeyOf 函数计算得到。items 字段使用 map 数据结构
+// 的方式存储，key 与 queue 对应，value 存储的是对象的 Deltas 数组
+type DeltaFIFO struct {
+  ......
+	items map[string]Deltas
+	queue []string
+  ......
+}
+
+// Add、Update、Delete 都是生产者方法，产生的都是增量更新，都会调用 queueActionLocked 方法
+// 只是传入的 DeltaType 不同
+func (f *DeltaFIFO) Add(obj interface{}) error {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	f.populated = true
+	return f.queueActionLocked(Added, obj)
+}
+
+func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) error {
+  // 取得 key
+	id, err := f.KeyOf(obj)
+	if err != nil {
+		return KeyError{obj, err}
+	}
+	oldDeltas := f.items[id]
+	newDeltas := append(oldDeltas, Delta{actionType, obj})
+  // 不只 watch，resync 机制也会改变 items 中的值，所以新的事件进来要进行去重
+	newDeltas = dedupDeltas(newDeltas)
+
+	if len(newDeltas) &gt; 0 {
+    // 更新 queue 字段
+		if _, exists := f.items[id]; !exists {
+			f.queue = append(f.queue, id)
+		}
+    // 更新 items
+		f.items[id] = newDeltas
+    // 唤醒被阻塞的 goroutine
+		f.cond.Broadcast()
+	} else {
+		// This never happens, because dedupDeltas never returns an empty list
+		// when given a non-empty list (as it is here).
+		// If somehow it happens anyway, deal with it but complain.
+		if oldDeltas == nil {
+			klog.Errorf(&quot;Impossible dedupDeltas for id=%q: oldDeltas=%#+v, obj=%#+v; ignoring&quot;, id, oldDeltas, obj)
+			return nil
+		}
+		klog.Errorf(&quot;Impossible dedupDeltas for id=%q: oldDeltas=%#+v, obj=%#+v; breaking invariant by storing empty Deltas&quot;, id, oldDeltas, obj)
+		f.items[id] = newDeltas
+		return fmt.Errorf(&quot;Impossible dedupDeltas for id=%q: oldDeltas=%#+v, obj=%#+v; broke DeltaFIFO invariant by storing empty Deltas&quot;, id, oldDeltas, obj)
+	}
+	return nil
+}
+
+// 消费者方法
+func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	for {
+    // 如果队列为空则阻塞
+		for len(f.queue) == 0 {
+			// When the queue is empty, invocation of Pop() is blocked until new item is enqueued.
+			// When Close() is called, the f.closed is set and the condition is broadcasted.
+			// Which causes this loop to continue and return from the Pop().
+			if f.closed {
+				return nil, ErrFIFOClosed
+			}
+			// 阻塞，可被 f.cond.Broadcast 唤醒
+			f.cond.Wait()
+		}
+    // 取出头部资源对象 key
+		id := f.queue[0]
+    // 已加锁，可以直接更新队列
+		f.queue = f.queue[1:]
+		if f.initialPopulationCount &gt; 0 {
+			f.initialPopulationCount--
+		}
+    // 根据 key 取出 deltas
+		item, ok := f.items[id]
+		if !ok {
+			// This should never happen
+			klog.Errorf(&quot;Inconceivable! %q was in f.queue but not f.items; ignoring.&quot;, id)
+			continue
+		}
+		delete(f.items, id)
+    // process 是传入的回调方法，由上层消费者（controller）传入
+    // 这正是第三个组件，sharedProcessor，DeltaFIFO 会以此通知 listeners
+		err := process(item)
+    // 如果回调函数出错，就将资源重新存入队列
+		if e, ok := err.(ErrRequeue); ok {
+			f.addIfNotPresent(id, item)
+			err = e.Err
+		}
+		// Don't need to copyDeltas here, because we're transferring
+		// ownership to the caller.
+		return item, err
+	}
+}
+</code></pre>
+<p><strong>DeltaFIFO Resync</strong></p>
+<p>Resync 与 kubebuilder  的 retry 是一样的功能吗？</p>
+<p>Deleted object 如何给出完整资源呢？</p>
+<p>上文在 <code>Reflector::ListAndWatch</code> 中可以看到启动了一个 goroutine 用于定时同步，调用的就是 <code>DeltaFIFO::Resync</code> 方法</p>
+<p>Resync 的作用是将 indexer 中的资源对象同步至 DeltaFIFO 中，以便于让处理失败的事件再次处理</p>
+<pre><code class="language-go">// Resync 实际上是添加了一个 Sync 类型的 delta
+func (f *DeltaFIFO) Resync() error {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+  // knownObject 接口用于列出所有已知资源对象，实际传入的就是 indexer
+  // 在 sharedIndexInformer::Run 方法中实例化 DeltaFIFO 时传入
+	if f.knownObjects == nil {
+		return nil
+	}
+
+	keys := f.knownObjects.ListKeys()
+	for _, k := range keys {
+		if err := f.syncKeyLocked(k); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Resync 的作用是将 indexer 中的资源对象同步至 DeltaFIFO 中，并将同步过去的资源对象设为 Sync 类型
+func (f *DeltaFIFO) syncKeyLocked(key string) error {
+	obj, exists, err := f.knownObjects.GetByKey(key)
+  ......
+
+	// If we are doing Resync() and there is already an event queued for that object,
+	// we ignore the Resync for it. This is to avoid the race, in which the resync
+	// comes with the previous value of object (since queueing an event for the object
+	// doesn't trigger changing the underlying store &lt;knownObjects&gt;.
+	id, err := f.KeyOf(obj)
+	if err != nil {
+		return KeyError{obj, err}
+	}
+	if len(f.items[id]) &gt; 0 {
+		return nil
+	}
+
+	if err := f.queueActionLocked(Sync, obj); err != nil {
+		return fmt.Errorf(&quot;couldn't queue object: %v&quot;, err)
+	}
+	return nil
+}
+</code></pre>
+<p><strong>Replace</strong></p>
+<p>在 <code>sharedIndexInformer::ListAndWatch</code> 中，List 部分会在通过 <code>DeltaFIFO::Replace</code> 方法替换 DeltaFIFO 中的资源，此方法用于首次 List 的数据处理或连接中断后的数据同步</p>
+<pre><code class="language-go">func (f *DeltaFIFO) Replace(list []interface{}, resourceVersion string) error {
+  ......
+	for _, item := range list {
+		key, err := f.KeyOf(item)
+		if err != nil {
+			return KeyError{item, err}
+		}
+		keys.Insert(key)
+		if err := f.queueActionLocked(action, item); err != nil {
+			return fmt.Errorf(&quot;couldn't enqueue object: %v&quot;, err)
+		}
+	}
+	......
+	// Detect deletions not already in the queue.
+	knownKeys := f.knownObjects.ListKeys()
+	queuedDeletions := 0
+	for _, k := range knownKeys {
+		if keys.Has(k) {
+			continue
+		}
+    ......
+    // 根据 Indexer 检测已删除的资源
+		if err := f.queueActionLocked(Deleted, DeletedFinalStateUnknown{k, deletedObj}); err != nil {
+			return err
+		}
+	}
+  ......
+}
+</code></pre>
+<h4 id="indexer">Indexer</h4>
+<p>Indexer 上面也介绍了，是负责 local cache 的组件，它用来存储资源对象并自带索引功能。Indexer 中的数据会与 Etcd 集群中的数据保持一致，这主要通过 Reflector 实现。</p>
+<p>在实例化 <code>sharedIndexInformer</code> 时需要在参数中传入参数，跟着一起实例化，下面是 deployment Informer 的代码：</p>
+<pre><code class="language-go">func (f *deploymentInformer) defaultInformer(client kubernetes.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredDeploymentInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+}
+
+func NewSharedIndexInformer(lw ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration, indexers Indexers) SharedIndexInformer {
+	realClock := &amp;clock.RealClock{}
+	sharedIndexInformer := &amp;sharedIndexInformer{
+    ......
+		indexer:                         NewIndexer(DeletionHandlingMetaNamespaceKeyFunc, indexers),
+    ......
+	}
+	return sharedIndexInformer
+}
+
+func NewIndexer(keyFunc KeyFunc, indexers Indexers) Indexer {
+  // cache 使用 cacheStorage 进行存储，自身在其基础上封装了用于索引的方法，便于使用
+	return &amp;cache{
+    // cacheStorage 使用的 ThreadSafeMap 是线程安全的存储
+		cacheStorage: NewThreadSafeStore(indexers, Indices{}),
+    // 用于获取 key 的闭包
+		keyFunc:      keyFunc,
+	}
+}
+
+func NewThreadSafeStore(indexers Indexers, indices Indices) ThreadSafeStore {
+	return &amp;threadSafeMap{
+    // 存储
+		items:    map[string]interface{}{},
+    // 索引器，map 类型，key 是索引器的名称，value 是对应索引器函数，由对应资源的 informer 传入
+    // 索引器函数被定义为接收一个资源对象，返回检索结果列表
+		indexers: indexers,
+    // 索引存储器，map 类型，将名称与 index 对应
+    // index 被定义为存储的缓存数据，通过 set 结构存储，go 语言没有 set 结构，所以是通过 map 实现 set 的去重
+		indices:  indices,
+	}
+}
+
+func (c *threadSafeMap) Add(key string, obj interface{}) {
+  // 通过锁保证数据一致性
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	oldObject := c.items[key]
+	c.items[key] = obj
+  // 更新索引
+	c.updateIndices(oldObject, obj, key)
+}
+</code></pre>
+<p>想要理解 indexer 还是需要通过 example：</p>
+<figure data-type="image" tabindex="1"><img src="https://tva1.sinaimg.cn/large/0081Kckwly1glqkusf9nvj30su10odib.jpg" alt="exalpme" loading="lazy"></figure>
+<h4 id="processor">Processor</h4>
+<p>最后一个组件 sharedProcessor，processor 作为回调函数在 DeltaFIFO 的中被调用，现在将代码回到 <code>Controller::Run</code> 中：</p>
+<pre><code class="language-go">func (c *controller) Run(stopCh &lt;-chan struct{}) {
+  ......
+	var wg wait.Group
+  // 上面讲了 Reflector:Run:
+	wg.StartWithChannel(stopCh, r.Run)
+  // 消费 DeltaFIFO 数据
+	wait.Until(c.processLoop, time.Second, stopCh)
+	wg.Wait()
+}
+
+func (c *controller) processLoop() {
+	for {
+    // 传入确保类型正确的回调函数，c.config.Process 由 sharedIndexInformer 传入
+		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
+		if err != nil {
+			if err == ErrFIFOClosed {
+				return
+			}
+      // DeltaFIFO::Pop 只会对 ErrRequeue 类型错误进行重试，此处会处理所有类型错误
+			if c.config.RetryOnError {
+				// 这是个安全的方法，如果队列中已存在，则不会重复添加
+				c.config.Queue.AddIfNotPresent(obj)
+			}
+		}
+	}
+}
+
+// 寻找 config.Process
+func (s *sharedIndexInformer) Run(stopCh &lt;-chan struct{}) {
+  ......
+	cfg := &amp;Config{
+		Queue:            fifo,
+		ListerWatcher:    s.listerWatcher,
+		ObjectType:       s.objectType,
+		FullResyncPeriod: s.resyncCheckPeriod,
+		RetryOnError:     false,
+		ShouldResync:     s.processor.shouldResync,
+    // here
+		Process:           s.HandleDeltas,
+		WatchErrorHandler: s.watchErrorHandler,
+	}
+  ......
+}
+
+// Informer DeltaFIFO 回调函数
+func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
+	s.blockDeltas.Lock()
+	defer s.blockDeltas.Unlock()
+
+	// from oldest to newest
+	for _, d := range obj.(Deltas) {
+		switch d.Type {
+    // 更新 local cache
+		case Sync, Replaced, Added, Updated:
+			s.cacheMutationDetector.AddObject(d.Object)
+			if old, exists, err := s.indexer.Get(d.Object); err == nil &amp;&amp; exists {
+				if err := s.indexer.Update(d.Object); err != nil {
+					return err
+				}
+
+				isSync := false
+				switch {
+				case d.Type == Sync:
+					// Sync events are only propagated to listeners that requested resync
+					isSync = true
+				case d.Type == Replaced:
+					if accessor, err := meta.Accessor(d.Object); err == nil {
+						if oldAccessor, err := meta.Accessor(old); err == nil {
+							// Replaced events that didn't change resourceVersion are treated as resync events
+							// and only propagated to listeners that requested resync
+							isSync = accessor.GetResourceVersion() == oldAccessor.GetResourceVersion()
+						}
+					}
+				}
+        // 发送给 sharedProcessor 组件
+				s.processor.distribute(updateNotification{oldObj: old, newObj: d.Object}, isSync)
+			} else {
+				if err := s.indexer.Add(d.Object); err != nil {
+					return err
+				}
+				s.processor.distribute(addNotification{newObj: d.Object}, false)
+			}
+    // 从 local cache 中删除对象资源
+		case Deleted:
+			if err := s.indexer.Delete(d.Object); err != nil {
+				return err
+			}
+			s.processor.distribute(deleteNotification{oldObj: d.Object}, false)
+		}
+	}
+	return nil
+}
+</code></pre>
+<p><strong>sharedProcessor</strong></p>
+<pre><code class="language-go">// sharedProcessor 在实例化 SharedIndexInformer 时一起实例化
+func NewSharedIndexInformer(lw ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration, indexers Indexers) SharedIndexInformer {
+	realClock := &amp;clock.RealClock{}
+	sharedIndexInformer := &amp;sharedIndexInformer{
+		processor:                       &amp;sharedProcessor{clock: realClock},
+		indexer:                         NewIndexer(DeletionHandlingMetaNamespaceKeyFunc, indexers),
+		listerWatcher:                   lw,
+		objectType:                      exampleObject,
+		resyncCheckPeriod:               defaultEventHandlerResyncPeriod,
+		defaultEventHandlerResyncPeriod: defaultEventHandlerResyncPeriod,
+		cacheMutationDetector:           NewCacheMutationDetector(fmt.Sprintf(&quot;%T&quot;, exampleObject)),
+		clock:                           realClock,
+	}
+	return sharedIndexInformer
+}
+
+// 在调用 SharedIndexInformer::AddEventHandler 的方法时，会为 sharedProcessor 添加 listener
+func NewController(
+	kubeclientset kubernetes.Interface,
+	sampleclientset clientset.Interface,
+	deploymentInformer appsinformers.DeploymentInformer,
+	fooInformer informers.FooInformer) *Controller {
+  ......
+  deploymentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+    AddFunc: controller.handleObject,
+    UpdateFunc: func(old, new interface{}) {
+      newDepl := new.(*appsv1.Deployment)
+      oldDepl := old.(*appsv1.Deployment)
+      if newDepl.ResourceVersion == oldDepl.ResourceVersion {
+        // Periodic resync will send update events for all known Deployments.
+        // Two different versions of the same Deployment will always have different RVs.
+        return
+      }
+      controller.handleObject(new)
+    },
+    DeleteFunc: controller.handleObject,
+  })
+  ......
+}
+
+func (s *sharedIndexInformer) AddEventHandler(handler ResourceEventHandler) {
+	s.AddEventHandlerWithResyncPeriod(handler, s.defaultEventHandlerResyncPeriod)
+}
+
+// 为 processor 添加 listener
+func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEventHandler, resyncPeriod time.Duration) {
+	......
+	listener := newProcessListener(handler, resyncPeriod, determineResyncPeriod(resyncPeriod, s.resyncCheckPeriod), s.clock.Now(), initialBufferSize)
+	.......
+	s.processor.addListener(listener)
+	for _, item := range s.indexer.List() {
+		listener.add(addNotification{newObj: item})
+	}
+}
+
+// listener 添加后会直接启动
+func (p *sharedProcessor) addListener(listener *processorListener) {
+	p.listenersLock.Lock()
+	defer p.listenersLock.Unlock()
+
+	p.addListenerLocked(listener)
+	if p.listenersStarted {
+		p.wg.Start(listener.run)
+		p.wg.Start(listener.pop)
+	}
+}
+
+// processorListener::run 方法会等待 pop 通知，并根据通知的类型，调用相应回调函数
+func (p *processorListener) run() {
+	stopCh := make(chan struct{})
+	wait.Until(func() {
+		for next := range p.nextCh {
+			switch notification := next.(type) {
+			case updateNotification:
+				p.handler.OnUpdate(notification.oldObj, notification.newObj)
+			case addNotification:
+				p.handler.OnAdd(notification.newObj)
+			case deleteNotification:
+				p.handler.OnDelete(notification.oldObj)
+			default:
+				utilruntime.HandleError(fmt.Errorf(&quot;unrecognized notification: %T&quot;, next))
+			}
+		}
+		// the only way to get here is if the p.nextCh is empty and closed
+		close(stopCh)
+	}, 1*time.Second, stopCh)
+}
+
+// processorListener::pop 会接收通知，并发送给 run 等待的 channel 中
+func (p *processorListener) pop() {
+	defer utilruntime.HandleCrash()
+	defer close(p.nextCh) // Tell .run() to stop
+
+	var nextCh chan&lt;- interface{}
+	var notification interface{}
+	for {
+		select {
+		case nextCh &lt;- notification:
+			// Notification dispatched
+			var ok bool
+			notification, ok = p.pendingNotifications.ReadOne()
+			if !ok { // Nothing to pop
+				nextCh = nil // Disable this select case
+			}
+		case notificationToAdd, ok := &lt;-p.addCh:
+			if !ok {
+				return
+			}
+			if notification == nil { // No notification to pop (and pendingNotifications is empty)
+				// Optimize the case - skip adding to pendingNotifications
+				notification = notificationToAdd
+				nextCh = p.nextCh
+			} else { // There is already a notification waiting to be dispatched
+				p.pendingNotifications.WriteOne(notificationToAdd)
+			}
+		}
+	}
+}
+</code></pre>
+<h2 id="workqueue">WorkQueue</h2>
+<p>WorkQueue 称为工作队列，Kubernetes 的 WorkQueue 队列与普通的 FIFO 队列相比，实现略显复杂，它的主要功能在于标记和去重，并支持如下特性：</p>
+<ul>
+<li><strong>有序</strong>：按照添加顺序处理元素</li>
+<li><strong>去重</strong>：相同元素在同一时间不会被重复处理，例如一个元素在处理之前被添加了多次，它只会被处理一次</li>
+<li><strong>并发性</strong>：多生产者和多消费者</li>
+<li><strong>标记机制</strong>：支持标记功能，标记一个元素是否被处理，也允许元素在处理时重新排队</li>
+<li><strong>通知机制</strong>：ShutDown 方法通过信号量通知队列不再接收新的元素，并通知 metric goroutine 退出</li>
+<li><strong>延迟</strong>：支持延迟队列，延迟一段时间后再将元素存入队列</li>
+<li><strong>限速</strong>：支持限速队列，元素存入队列时进行速率限制，限制一个元素被重新排队的次数</li>
+<li><strong>Metric</strong>：支持 metric 监控指标</li>
+<li><strong>Interface</strong>：FIFO 队列接口，先进先出，并支持去重机制</li>
+<li><strong>DelayingInterface</strong>：延迟队列接口，基于 Interface 接口封装，延迟一段时间后再将元素存入队列</li>
+<li><strong>RateLimitingInterface</strong>：限速队列接口，基于 DelayingInterface 接口封装，支持元素存入队列时进行速率限制</li>
+</ul>
+<h3 id="源码-2">源码</h3>
+<p>SampleController 在实例化 Controller 时实例化了 <code>NamedRateLimitingQueue</code>，也就是命名的限速队列。</p>
+<pre><code class="language-go">func NewController(
+	kubeclientset kubernetes.Interface,
+	sampleclientset clientset.Interface,
+	deploymentInformer appsinformers.DeploymentInformer,
+	fooInformer informers.FooInformer) *Controller {
+  ......
+	controller := &amp;Controller{
+    ......
+    // DefaultControllerRateLimiter 是默认的、基于令牌桶机制的速率限制器
+		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), &quot;Foos&quot;),
+    ......
+	}
+  fooInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+    // 在回调函数中将 delta 加入 workQueue
+		AddFunc: controller.enqueueFoo,
+		UpdateFunc: func(old, new interface{}) {
+			controller.enqueueFoo(new)
+		},
+	})
+  ......
+}
+
+func NewNamedRateLimitingQueue(rateLimiter RateLimiter, name string) RateLimitingInterface {
+	return &amp;rateLimitingType{
+    // 同时实例化延迟队列
+		DelayingInterface: NewNamedDelayingQueue(name),
+		rateLimiter:       rateLimiter,
+	}
+}
+
+func NewNamedDelayingQueue(name string) DelayingInterface {
+	return NewDelayingQueueWithCustomClock(clock.RealClock{}, name)
+}
+
+func NewDelayingQueueWithCustomClock(clock clock.Clock, name string) DelayingInterface {
+  // NewNamed 会实例化一个基础的 FIFOWorkQueue
+	return newDelayingQueue(clock, NewNamed(name), name)
+}
+
+func newDelayingQueue(clock clock.Clock, q Interface, name string) *delayingType {
+	ret := &amp;delayingType{
+    // 基础队列
+		Interface:       q,
+		clock:           clock,
+    // 心跳确保等待时间不超过 maxWait，const maxWait = 10 * time.Second
+		heartbeat:       clock.NewTicker(maxWait),
+		stopCh:          make(chan struct{}),
+		waitingForAddCh: make(chan *waitFor, 1000),
+		metrics:         newRetryMetrics(name),
+	}
+  // 处理延迟元素
+	go ret.waitingLoop()
+	return ret
+}
+
+// 以上是实例化的过程，下面看添加
+func (c *Controller) enqueueFoo(obj interface{}) {
+	var key string
+	var err error
+  // obj 为传入的资源，在此处转为 key 存入 WorkQueue
+  // 为什么转为 key，而不是将 object 整个存入 workQueue？
+  // 暂时的思考： object 不利于去重，而且数据过大，还有如果存入 object
+  // Reconciler 还是需要 Get 来判断资源是否已删除
+	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+  // RateLimiting 和 Delaying 都是基于基础的 workQueue 封装
+  // 所以此处调用的是 Interface::Add()
+	c.workqueue.Add(key)
+}
+
+// 现在回来看看 NewNamed 实例化的是什么
+func NewNamed(name string) *Type {
+	rc := clock.RealClock{}
+	return newQueue(
+		rc,
+		globalMetricsFactory.newQueueMetrics(name, rc),
+		defaultUnfinishedWorkUpdatePeriod,
+	)
+}
+func newQueue(c clock.Clock, metrics queueMetrics, updatePeriod time.Duration) *Type {
+	t := &amp;Type{
+		clock:                      c,
+		dirty:                      set{},
+		processing:                 set{},
+		cond:                       sync.NewCond(&amp;sync.Mutex{}),
+		metrics:                    metrics,
+		unfinishedWorkUpdatePeriod: updatePeriod,
+	}
+	go t.updateUnfinishedWorkLoop()
+	return t
+}
+
+func (q *Type) Add(item interface{}) {
+	q.cond.L.Lock()
+	defer q.cond.L.Unlock()
+	if q.shuttingDown {
+		return
+	}
+  // 去重，这里也不利于 object 整个传入
+	if q.dirty.has(item) {
+		return
+	}
+
+	q.metrics.add(item)
+
+	q.dirty.insert(item)
+  // 集中处理正在处理的元素
+	if q.processing.has(item) {
+		return
+	}
+  
+  // 将需要处理的元素加入到队列中，队列中应该只包含已处理完成的元素，不应该有 processing 的元素
+	q.queue = append(q.queue, item)
+	q.cond.Signal()
+}
+
+// 现在来看下如何消费 workQueue 中的内容
+// 在 Controller::Run() 中，会根据给定线程数启动 x 个 Controller::runWorkker()
+func (c *Controller) Run(threadiness int, stopCh &lt;-chan struct{}) error {
+	......
+	for i := 0; i &lt; threadiness; i++ {
+		go wait.Until(c.runWorker, time.Second, stopCh)
+	}
+  ......
+}
+
+// 这是一个持久运行的方法，它会不断的消费 workQueue 中的元素
+func (c *Controller) runWorker() {
+	for c.processNextWorkItem() {
+	}
+}
+
+// 这里的处理过于简单，可以看看 kubebuilder 的源码了
+func (c *Controller) processNextWorkItem() bool {
+  // 取出元素
+	obj, shutdown := c.workqueue.Get()
+  ......
+	err := func(obj interface{}) error {
+		......
+    // Controller::syncHandler 等同于 Reconciler
+		if err := c.syncHandler(key); err != nil {
+			// 处理失败则放回等待再次处理
+			c.workqueue.AddRateLimited(key)
+			return fmt.Errorf(&quot;error syncing '%s': %s, requeuing&quot;, key, err.Error())
+		}
+		// 如果处理成功则删除元素
+		c.workqueue.Forget(obj)
+    ......
+	}(obj)
+  ......
+}
+</code></pre>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/rKzMZCB0T/" class="tag">
+                    kubernetes
+                  </a>
+                
+              </div>
+            
+            
+              <div class="next-post">
+                <div class="next">下一篇</div>
+                <a href="https://cnbailian.github.io/post/why-do-use-kubernetes-crd/">
+                  <h3 class="post-title">
+                    我们为什么要使用 Kubernetes 自定义资源
+                  </h3>
+                </a>
+              </div>
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

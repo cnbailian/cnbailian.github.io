@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>Go 栈笔记 | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="本文用于持续记录 Go 栈相关源码学习笔记。
+
+Goroutine 执行栈结构
+Goroutine 是一个 g 对象，g 对象的前三个字段描述了它的执行栈：
+// stack 描述了 Goroutine 的执行栈，栈的区间为 [lo, hi..." />
+    <meta name="keywords" content="Go语言学习笔记,go" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">Go 栈笔记</h2>
+            <div class="post-date">2021-02-08</div>
+            
+            <div class="post-content" v-pre>
+              <p>本文用于持续记录 Go 栈相关源码学习笔记。</p>
+<!--more-->
+<h2 id="goroutine-执行栈结构">Goroutine 执行栈结构</h2>
+<p>Goroutine 是一个 <code>g</code> 对象，<code>g</code> 对象的前三个字段描述了它的执行栈：</p>
+<pre><code class="language-go">// stack 描述了 Goroutine 的执行栈，栈的区间为 [lo, hi)，在栈两边没有任何隐式数据结构
+// 因此 Go 的执行栈由运行时管理，本质上分配在堆中，比 ulimit -s 大
+type stack struct {
+	lo uintptr
+	hi uintptr
+}
+// gobuf 描述了 Goroutine 的执行现场
+type gobuf struct {
+	sp   uintptr
+	pc   uintptr
+	g    guintptr
+	ctxt unsafe.Pointer
+	ret  sys.Uintreg
+	lr   uintptr
+	bp   uintptr
+}
+
+type g struct {
+  // stack 字段描述了实际的栈内存：[stack.lo, stack.hi)
+	stack       stack   // offset known to runtime/cgo
+  // stackhuard0 是对比 Go 栈增长的 prologue 的栈指针
+  // 如果 sp 寄存器比 stackguard 小（由于栈忘低地址方向增长），会触发栈拷贝和调度
+  // 通常情况下：stackguard0 = stack.lo + StackGuard，但被抢占时会变成 StackPreempt
+	stackguard0 uintptr // offset known to liblink
+  // stackguard1 时对比 C 栈增长的 prologue 的栈指针
+  // 当位于 g0 的 gsignal 栈上时，值为 stack.lo + StackGuard
+  // 在其他栈上值为 ~0 用于触发 morestackc(并 crash)调用
+	stackguard1 uintptr // offset known to liblink
+  ...
+  // sched 描述了执行现场
+	sched       gobuf
+}
+</code></pre>
+<h2 id="go-调用栈帧内存布局">Go 调用栈帧内存布局</h2>
+<h3 id="栈帧布局">栈帧布局</h3>
+<p><code>runtime/stack.go</code> 中有 x86 架构下的栈帧布局示意图</p>
+<pre><code class="language-go">// (x86)
+// +------------------+
+// | args from caller |
+// +------------------+ &lt;- frame-&gt;argp
+// |  return address  |
+// +------------------+
+// |  caller's BP (*) | (*) if framepointer_enabled &amp;&amp; varp &lt; sp
+// +------------------+ &lt;- frame-&gt;varp
+// |     locals       |
+// +------------------+
+// |  args to callee  |
+// +------------------+ &lt;- frame-&gt;sp
+</code></pre>
+<p>在 <strong>x86架构下，golang栈帧布局从上（高地址）到下（低地址）依次为：这个函数帧的调用者传入的参数， 这个函数帧的返回地址，调用者调用时的BP快照（见上文<code>FP</code>用法原理），该帧本地变量，该帧调用其它函数需要传递的参数。</strong></p>
+<h4 id="完整的栈结构图">完整的栈结构图</h4>
+<pre><code>                       -----------------                                           
+                       current func arg0                                           
+                       ----------------- &lt;----------- FP(pseudo FP)                
+                        caller ret addr                                            
+                       +---------------+ &lt;----------- 这里是 _g_.sched.hi 吗？
+                       | caller BP(*)  |                                           
+                       ----------------- &lt;----------- SP(pseudo SP，实际上是当前栈帧的 BP 位置)
+                       |   Local Var0  |                                           
+                       -----------------                                           
+                       |   Local Var1  |                                           
+                       -----------------                                           
+                       |   Local Var2  |                                           
+                       -----------------                -                          
+                       |   ........    |                                           
+                       -----------------                                           
+                       |   Local VarN  |                                           
+                       -----------------                                           
+                       |               |                                           
+                       |               |                                           
+                       |  temporarily  |                                           
+                       |  unused space |                                           
+                       |               |                                           
+                       |               |                                           
+                       -----------------                                           
+                       |  call retn    |                                           
+                       -----------------                                           
+                       |  call ret(n-1)|                                           
+                       -----------------                                           
+                       |  ..........   |                                           
+                       -----------------                                           
+                       |  call ret1    |                                           
+                       -----------------                                           
+                       |  call argn    |                                           
+                       -----------------                                           
+                       |   .....       |                                           
+                       -----------------                                           
+                       |  call arg3    |                                           
+                       -----------------                                           
+                       |  call arg2    |                                           
+                       |---------------|                                           
+                       |  call arg1    |                                           
+                       -----------------   &lt;------------  hardware SP 位置           
+                       | return addr   |                                           
+                       +---------------+   &lt;----------- 这里是 _g_.sched.lo 吗？
+                                                                                   
+</code></pre>
+<h3 id="go-栈管理机制">Go 栈管理机制</h3>
+<p>Go 使用<strong>连续栈</strong>机制进行管理栈空间。</p>
+<p>在 Go1.3 以前使用<strong>分段栈</strong>：</p>
+<p>在栈空间用完后，分配一块新的内存地址，在这个新栈中包含旧栈的地址。</p>
+<p>问题：这种设计的缺陷很容易破坏缓存的局部性原理，从而降低程序的运行时性能。收缩栈的操作太过昂贵，在循环中重复分裂，收缩，释放的操作会付出很大的开销。这就是<strong>热点分裂问题（hot split problem）</strong></p>
+<p>从 Go1.4 之后的版本中，使用了<strong>连续栈</strong>机制，也叫栈拷贝。</p>
+<p>栈拷贝的方式是创建一个新的栈，它的大小是旧栈的两倍，并把旧栈完全拷贝进去。收缩操作不做处理，再次增长时使用刚才的空间。</p>
+<h4 id="栈是如何拷贝的">栈是如何拷贝的</h4>
+<p>由于栈中的变量在 Go 中能够获得其地址，因此最终会出现指向栈的指针，如果直接拷贝，任何指向旧栈的指针都会失效。</p>
+<p>所以 Go 的内存安全机制规定，任何能够指向栈的指针都必须存在于栈中。</p>
+<p>在编译器的逃逸分析中，所有有可能逃逸的变量，都会被分配在堆上。剩下栈中的指针，指向的都是栈里的数据。</p>
+<h5 id="go-没有采用-x86-64-架构函数传参优化">Go 没有采用 x86-64 架构函数传参优化</h5>
+<p>在 x86-64 架构下，增加了许多通用寄存器，C 系语言为了优化，会将参数部分（最多6个）使用寄存器直接传递，但是在 Go 中，编译器强制规定<strong>函数的传参全部使用栈传递，不使用寄存器传参</strong>。</p>
+<h2 id="执行栈分配过程">执行栈分配过程</h2>
+<h3 id="从创建-goroutine-开始">从创建 goroutine 开始</h3>
+<pre><code class="language-go">// go 函数会被编译为 runtime.newproc 的调用
+// 用 siz 字节的参数创建运行 fn 调用的 goroutine
+// 这个调用的堆栈布局是特殊的，它假设传递给 fn 的参数是进阶在 &amp;fn 之上的堆栈上的。
+// 因此它们在逻辑上是 newproc 的参数框架的一部分
+func newproc(siz int32, fn *funcval) {
+  // 从 fn 的地址增加一个指针的长度，从而获取第一参数地址
+	argp := add(unsafe.Pointer(&amp;fn), sys.PtrSize)
+  // 获取 g 指针，编译器会编译为从 TLS 或其他专用寄存器中获取
+  // 获取到的是 caller g 吗？
+	gp := getg()
+  // 获取调用方 PC
+	pc := getcallerpc()
+  // 使用 g0 系统栈创建新的 goroutine
+	systemstack(func() {
+    // 创建 g 的函数，传入了 fn 函数的入口地址，argp 调用函数参数的起始位置，siz 参数长度，
+    // gp caller g，caller pc（创建 goroutine 语句的地址）
+		newg := newproc1(fn, argp, siz, gp, pc)
+
+		_p_ := getg().m.p.ptr()
+		runqput(_p_, newg, true)
+
+		if mainStarted {
+			wakep()
+		}
+	})
+}
+</code></pre>
+<h4 id="解析-newproc-调用前的过程">解析 newproc 调用前的过程</h4>
+<p>也就是 fn 在哪，fn 之上的参数是如何分配的。</p>
+<p>有参数的情况</p>
+<pre><code class="language-go">package main
+
+func hello(msg string) {
+	println(msg)
+}
+
+func main() { // 7 行
+	go hello(&quot;hello world&quot;) // 8 行
+}
+</code></pre>
+<pre><code class="language-assembly">&quot;&quot;.main STEXT size=91 args=0x0 locals=0x28
+	......
+	0x000f 00015 (hello.go:7)	SUBQ	$40, SP // 栈扩大 40 字节
+	0x0013 00019 (hello.go:7)	MOVQ	BP, 32(SP) // caller BP，由 callee 存储
+	0x0018 00024 (hello.go:7)	LEAQ	32(SP), BP // callee BP 的栈从 32(SP) 开始
+	......
+	0x001d 00029 (hello.go:8)	MOVL	$16, (SP) // 将 16 放到 SP 的位置，16 是第一个参数 siz，因为是 int32，所以是 MOVL。数字是 16 是因为有 string.data 和 string.len 两个参数加一起占 16 个字节
+	0x0024 00036 (hello.go:8)	LEAQ	&quot;&quot;.hello·f(SB), AX // 将 hello 的调用地址传给 AX
+	0x002b 00043 (hello.go:8)	MOVQ	AX, 8(SP) // 将 hello 的调用地址放入 8(SP) 的位置
+	0x0030 00048 (hello.go:8)	LEAQ	go.string.&quot;hello world&quot;(SB), AX // 将“hello world”的地址放入 AX
+	0x0037 00055 (hello.go:8)	MOVQ	AX, 16(SP) // 将字符串地址放在 16(SP) 的位置
+	0x003c 00060 (hello.go:8)	MOVQ	$11, 24(SP) // 将 $11 放在 24(SP) 的位置，11 是 string 的长度，string 是结构体，结构体在传参中会扁平化为多个参数
+	0x0045 00069 (hello.go:8)	CALL	runtime.newproc(SB) // call 指令 = push+jmp，所以会将 newproc 地址入栈
+	0x004a 00074 (hello.go:9)	MOVQ	32(SP), BP // 复原 caller BP
+	0x004f 00079 (hello.go:9)	ADDQ	$40, SP // 缩小栈
+</code></pre>
+<p>特殊的栈布局</p>
+<pre><code>             栈布局
+40(SP)+-----------------+      高地址
+      |    caller BP    |       
+32(SP)+-----------------+ &lt;-- main.BP
+      |  11 string.len  |
+24(SP)+-----------------+ 
+      | &amp;&quot;hello world&quot;  |
+16(SP)+-----------------+ &lt;-- fn + sys.PtrSize
+      |      hello      |
+8(SP) +-----------------+ &lt;-- fn
+      |       siz       |
+(SP)  +-----------------+ &lt;-- SP
+      |    newproc PC   |  
+      +-----------------+ callerpc: 要运行的 Goroutine 的 PC
+      |                 |
+      |                 |       低地址
+</code></pre>
+<h4 id="newproc1-调用">newproc1 调用</h4>
+<pre><code class="language-go">func newproc1(fn *funcval, argp unsafe.Pointer, narg int32, callergp *g, callerpc uintptr) *g {
+  // 在系统栈中得到的是 g0
+	_g_ := getg()
+  ......
+	siz := narg
+	siz = (siz + 7) &amp;^ 7 // 内存对齐
+
+	// 参数大小不能超过 2048-4*8-8（64位），可以分配更大的栈，但没必要
+	if siz &gt;= _StackMin-4*sys.RegSize-sys.RegSize {
+		throw(&quot;newproc: function arguments too large for new goroutine&quot;)
+	}
+
+	_p_ := _g_.m.p.ptr()
+  // 尝试复用运行结束的 G
+	newg := gfget(_p_)
+	if newg == nil {
+    // 分配一个新的 g 结构, 包含一个 stacksize 字节的的栈
+    // 总是 2KB？
+		newg = malg(_StackMin)
+		casgstatus(newg, _Gidle, _Gdead)
+		allgadd(newg) // 将 _Gdead 状态的 newg 添加到 allg，防止被 GC 扫描到
+	}
+  ......
+}
+
+func malg(stacksize int32) *g {
+	newg := new(g)
+	if stacksize &gt;= 0 {
+    // 有些系统需要额外的栈空间
+    // 将 stacksize 舍入为 2 的指数，目的是为了消除 _StackSystem 对栈的影响
+		stacksize = round2(_StackSystem + stacksize)
+		systemstack(func() {
+			newg.stack = stackalloc(uint32(stacksize))
+		})
+    // 设置堆栈保护位置
+		newg.stackguard0 = newg.stack.lo + _StackGuard
+		newg.stackguard1 = ^uintptr(0)
+    ......
+	}
+	return newg
+}
+</code></pre>
+<h3 id="执行栈的分配">执行栈的分配</h3>
+<p>前置部分知识：[[Go 内存分配器]]</p>
+<p>栈可能从两个不同的位置被分配：小栈和大栈。小栈指大小为 2K/4K/8K/16K 的栈，大栈则是更大的栈。 <code>stackalloc</code> 基本上也就是在权衡应该从哪里分配出一个执行栈，返回所在栈的低位和高位。</p>
+<pre><code class="language-go">func stackalloc(n uint32) stack {
+  // g0
+	thisg := getg()
+  ......
+
+	// 小栈由固定大小的空闲链表分配器进行分配
+	// 大栈由专用的 span 分配
+	var v unsafe.Pointer
+	if n &lt; _FixedStack&lt;&lt;_NumStackOrders &amp;&amp; n &lt; _StackCacheSize {
+    // 小栈分配
+	} else {
+    // 大栈分配
+	}
+  ......
+	return stack{uintptr(v), uintptr(v) + uintptr(n)}
+}
+</code></pre>
+<h4 id="小栈">小栈</h4>
+<p>对于较小的栈可以从 <code>stackpool</code> 或者 <code>stackcache</code> 中分配，这取决于当产生栈分配时，goroutine 是否正处于 <code>exitsyscall</code> 或 <code>procresize</code>，或是正在发生抢占 <code>thisg.m.preemptoff != &quot;&quot;</code>。</p>
+<pre><code class="language-go">order := uint8(0)
+n2 := n
+for n2 &gt; _FixedStack {
+  order++
+  n2 &gt;&gt;= 1
+}
+var x gclinkptr
+// 检查是否需要从全局池（stackpool）中分配栈
+if stackNoCache != 0 || thisg.m.p == 0 || thisg.m.preemptoff != &quot;&quot; {
+  lock(&amp;stackpool[order].item.mu)
+  x = stackpoolalloc(order)
+  unlock(&amp;stackpool[order].item.mu)
+} else {
+  // 如果不需要就从 mcache.stackcache 中分配
+  c := thisg.m.p.ptr().mcache
+  x = c.stackcache[order].list
+  if x.ptr() == nil { // 提取失败，扩容再重试
+    stackcacherefill(c, order)
+    x = c.stackcache[order].list
+  }
+  c.stackcache[order].list = x.ptr().next
+  c.stackcache[order].size -= uintptr(n)
+}
+v = unsafe.Pointer(x)
+
+// mcache.stackcache 扩容
+func stackcacherefill(c *mcache, order uint8) {
+  ......
+	var list gclinkptr
+	var size uintptr
+	lock(&amp;stackpool[order].item.mu)
+  // 从全局池（stackpool）中获取一些 stack
+	// 获取所允许的容量的一半来防止 thrashing
+	for size &lt; _StackCacheSize/2 {
+		x := stackpoolalloc(order)
+		x.ptr().next = list
+		list = x
+		size += _FixedStack &lt;&lt; order
+	}
+	unlock(&amp;stackpool[order].item.mu)
+	c.stackcache[order].list = list
+	c.stackcache[order].size = size
+}
+
+// 从空闲池中分配一个栈，必须在持有 stackpool[order].item.mu 下调用
+func stackpoolalloc(order uint8) gclinkptr {
+	list := &amp;stackpool[order].item.span // mSpanList 存储了 mspan 的头部和尾部
+	s := list.first // 链表头
+	lockWithRankMayAcquire(&amp;mheap_.lock, lockRankMheap)
+  // 证明没有缓存已空
+	if s == nil {
+    // 从 mheap 上申请，一次申请 32KB 内存即 4 页（(32*1024) &gt;&gt; 13）
+		s = mheap_.allocManual(_StackCacheSize&gt;&gt;_PageShift, &amp;memstats.stacks_inuse)
+    ......
+    // OpenBSD 6.4+ 对栈内存有特殊的需求，所以只要我们从堆上申请栈内存，需要在申请后做一些额外处理
+		osStackAlloc(s)
+		s.elemsize = _FixedStack &lt;&lt; order
+		for i := uintptr(0); i &lt; _StackCacheSize; i += s.elemsize {
+      // gclinkptr 也是一个指针类型
+      // 作用是屏蔽gc扫描
+			x := gclinkptr(s.base() + i)
+      // 链表头插法
+			x.ptr().next = s.manualFreeList
+			s.manualFreeList = x
+		}
+		list.insert(s)
+	}
+	x := s.manualFreeList
+	if x.ptr() == nil {
+		throw(&quot;span has no free stacks&quot;)
+	}
+	s.manualFreeList = x.ptr().next
+	s.allocCount++
+	if s.manualFreeList.ptr() == nil {
+		// 所有内存已经分配完毕，删除节点 s
+		list.remove(s)
+	}
+	return x
+}
+</code></pre>
+<h4 id="大栈">大栈</h4>
+<p>大空间从 <code>stackLarge</code> 进行分配</p>
+<pre><code class="language-go">var s *mspan
+npage := uintptr(n) &gt;&gt; _PageShift
+log2npage := stacklog2(npage)
+
+// 尝试从 stackLarge 缓存中获取堆栈。
+lock(&amp;stackLarge.lock)
+if !stackLarge.free[log2npage].isEmpty() {
+  s = stackLarge.free[log2npage].first
+  stackLarge.free[log2npage].remove(s)
+}
+unlock(&amp;stackLarge.lock)
+
+lockWithRankMayAcquire(&amp;mheap_.lock, lockRankMheap)
+
+if s == nil {
+  // 如果无法从缓存中获取，则从堆中分配一个新的栈
+  s = mheap_.allocManual(npage, &amp;memstats.stacks_inuse)
+  if s == nil {
+    throw(&quot;out of memory&quot;)
+  }
+  osStackAlloc(s)
+  s.elemsize = uintptr(n)
+}
+v = unsafe.Pointer(s.base())
+</code></pre>
+<h4 id="堆上分配">堆上分配</h4>
+<p>无论是大栈还是小栈的分配，都是使用从 <code>mheap</code> 上申请的缓存，通过 <code>allocManual</code> 方法：</p>
+<pre><code class="language-go">func (h *mheap) allocManual(npages uintptr, stat *uint64) *mspan {
+	return h.allocSpan(npages, true, 0, stat)
+}
+</code></pre>
+<p>[[Go 内存分配器]]</p>
+<p><strong>总结</strong></p>
+<figure data-type="image" tabindex="1"><img src="https://image.baidu.com/search/down?url=https://tva1.sinaimg.cn/large/008eGmZEly1gmv4h8v5k2j30v10l4wgo.jpg" alt="summary" loading="lazy"></figure>
+<h2 id="栈管理">栈管理</h2>
+<p>早期几个版本中发生过一些变化：</p>
+<ul>
+<li>v1.0 ~ v1.1 — 最小栈内存空间为 4KB；</li>
+<li>v1.2 — 将最小栈内存提升到了 8KB；</li>
+<li>v1.3 — 使用<strong>连续栈</strong>替换之前版本的分段栈；</li>
+<li>v1.4 — 将最小栈内存降低到了 2KB；</li>
+</ul>
+<p>Goroutine 的初始栈内存在最初的几个版本中多次修改，从 4KB 提升到 8KB 是临时的解决方案，其目的是为了减轻分段栈中的栈分裂对程序的性能影响；在 v1.3 版本引入连续栈之后，Goroutine 的初始栈大小降低到了 2KB，进一步减少了 Goroutine 占用的内存空间。</p>
+<h3 id="分段栈">分段栈</h3>
+<p>Go 会在编译时在每个 go 函数入口处增加一个栈空间检查代码，如果栈用光了，就会去调用 <code>morestack</code> 函数。<code>morestack</code> 函数会分配一段新内存用作栈空间，接下来它会将有关栈的各种数据信息写入栈底的一个 struct 中，包括上一段的堆栈地址。然后重启 goroutine 来重试导致栈用光的函数。这就是“栈分裂”。</p>
+<pre><code>  +---------------+
+  |               |  &lt;---+ 新栈
+  |   unused      |
+  |   stack       |
+  |   space       |
+  +---------------+
+  |    Foobar     |
+  |               |
+  +---------------+
+  |               |
+  |  lessstack    |
+  +---------------+
+  | Stack info    |
+  |               |-----+
+  +---------------+     |
+                        |
+                        |
+  +---------------+     |
+  |    Foobar     |     |
+  |               | &lt;---+
+  +---------------+
+  | rest of stack | &lt;---+ 旧栈
+  |               |
+</code></pre>
+<p>分段栈回溯机理：在新栈的底部，我们插入了 <code>lessstack</code> 函数。当我们从导致栈分裂的函数返回时，我们会回到 <code>lessstack</code>， <code>lessstack</code> 会查找 stack 底部的那个 struct，并调整栈指针（rsp），使得返回前一段的栈空间。这样，我们就将新的栈释放掉了。</p>
+<p>分段栈也有瑕疵。这两个栈彼此没有连续。 这种设计的缺陷很容易破坏缓存的<strong>局部性原理</strong>，从而降低程序的运行时性能。</p>
+<p>同时<strong>收缩栈是一个相对昂贵的操作</strong>。如果是在一个循环中分裂栈情况更明显。函数会增长栈，分裂栈，返回栈，并且释放栈分段。如果是在循环里面做这些操作，那么将会付出很大的开销。例如循环一次经历了这些过程，当下一次循环时栈又被耗尽，又得重新分配栈分段，然后又被释放掉，周而复始，循环往复，开销就会巨大。</p>
+<p>这就是熟知的 <strong><code>hot split problem</code></strong> （热点分裂问题）。这是Golang开发组切换到新的栈管理方式的主要原因，新方式称为<strong>栈拷贝</strong>。</p>
+<h3 id="连续栈栈拷贝">连续栈（栈拷贝）</h3>
+<p>栈拷贝开始很像分段栈。协程运行，使用栈空间，当栈将要耗尽时，触发相同的栈溢出检测。但是，不像分段栈里有一个回溯链接，<strong>栈拷贝的方式则是创建了一个新的分段，它是旧栈的两倍大小，并且把旧栈完全拷贝进来。</strong></p>
+<p>但栈拷贝也没有想象中的那么简单。由于栈中的变量在 Golang 中能够获取其地址，因此最终会出现指向栈的指针。而如果轻易拷贝移动栈，任何指向旧栈的指针都会失效。</p>
+<p>所以 Golang 的内存安全机制规定，任何能够指向栈的指针都必须存在于栈中。这就可以通过垃圾收集器协助栈拷贝，因为垃圾收集器需要知道哪些指针可以进行回收，所以可以查到栈上的哪些部分是指针，当进行栈拷贝时，会更新指针信息只相信目标，以及它相关的所有指针。</p>
+<p>特殊的是 <code>runtime</code> 的大量核心调度函数和 GC 核心都是用 C 语言写的，这些函数都获取不到指针信息，那么它们就无法复制。这种都会在一个特殊的栈中执行（g0），并且由 <code>runtime</code> 开发者定义栈尺寸。</p>
+<h4 id="汇编中的连续栈">汇编中的连续栈</h4>
+<p>在机器架构层面，很多关于函数的公用操作都会被提取为固定代码，在函数运行时插入到代码片段的前后部分中，其中函数代码前插入汇编，称为<code>prolog</code>，一般只会有一个<code>prolog</code>。在函数代码后插入汇编，称为<code>epilog</code>，一般可以有多个<code>epilog</code>。这就是“序言”和“后记”。</p>
+<p><strong>golang就是用<code>prolog + epilog</code>的方式来实现连续栈的检测和复制的。</strong></p>
+<pre><code class="language-assembly">&quot;&quot;.main STEXT size=105 args=0x0 locals=0x20
+	0x0000 00000 (main.go:23)	TEXT	&quot;&quot;.main(SB), ABIInternal, $32-0
+	0x0000 00000 (main.go:23)	MOVQ	(TLS), CX
+	0x0009 00009 (main.go:23)	CMPQ	SP, 16(CX)
+	0x000d 00013 (main.go:23)	JLS	98
+	// main func body
+	0x0062 00098 (main.go:26)	NOP
+	0x0062 00098 (main.go:23)	PCDATA	$1, $-1
+	0x0062 00098 (main.go:23)	PCDATA	$0, $-1
+	0x0062 00098 (main.go:23)	CALL	runtime.morestack_noctxt(SB)
+	0x0067 00103 (main.go:23)	JMP	0
+</code></pre>
+<h4 id="栈溢出检测实现">栈溢出检测实现</h4>
+<p>TLS(thred-local storage) 是伪寄存器，它表示 <code>g</code> 结构体的位置。并且只能被载入到另一个寄存器中（因为本质上不是寄存器，是内存位置？）。16(TLS) 指向的是 <code>g.stackguard0</code>。<code>g.stackguard0</code> 在上面的源码中显示被设置为 <code>g.stack.lo + _StackGuard</code> 的位置，也就是保留栈顶的一段（<code>_StackGuard</code>）位置。所以每一个不是 <code>nosplit</code> 的函数都会在编译后的函数中加入检查，比较 SP 和 <code>g.stackguard0</code> 的值。</p>
+<p>这就表示：<strong>栈溢出发生在整个函数执行前就能被侦测到，而不是函数内某条语句执行时。</strong></p>
+<figure data-type="image" tabindex="2"><img src="https://image.baidu.com/search/down?url=https://tva1.sinaimg.cn/large/008eGmZEly1gmwi88j939j30cu0c0dg4.jpg" alt="StackGuard" loading="lazy"></figure>
+<h2 id="执行栈的伸缩">执行栈的伸缩</h2>
+<h3 id="栈的扩张">栈的扩张</h3>
+<p>经过溢出检测后，会跳转到汇编实现的函数上进行栈扩容，如果函数不需要 <code>g.sched.ctxt</code> 字段，则会调用 <code>runtime.nirestack_noctxt</code>，否则会被编译为直接调用 <code>runtime.morestack</code>。</p>
+<pre><code class="language-assembly">TEXT runtime·morestack_noctxt(SB),NOSPLIT,$0
+	MOVL	$0, DX // DX 中存储着 g.sched.ctxt 字段，置为0意为不需要保存。
+	JMP	runtime·morestack(SB)
+
+TEXT runtime·morestack(SB),NOSPLIT,$0-0
+	// 检查要增加的是否为 g0 栈，不能扩容 g0 栈
+	get_tls(CX)
+	MOVQ	g(CX), BX
+	MOVQ	g_m(BX), BX
+	MOVQ	m_g0(BX), SI
+	CMPQ	g(CX), SI
+	JNE	3(PC)
+	CALL	runtime·badmorestackg0(SB)
+	CALL	runtime·abort(SB)
+
+	// 不能扩容信号栈（gsignal stack）
+	MOVQ	m_gsignal(BX), SI
+	CMPQ	g(CX), SI
+	JNE	3(PC)
+	CALL	runtime·badmorestackgsignal(SB)
+	CALL	runtime·abort(SB)
+
+	// 从 f 调用
+	// 将 m-&gt;morebuf 设置为 f 的调用方
+	NOP	SP	// tell vet SP changed - stop checking offsets
+	MOVQ	8(SP), AX	// f's caller's PC
+	MOVQ	AX, (m_morebuf+gobuf_pc)(BX)
+	LEAQ	16(SP), AX	// f's caller's SP
+	MOVQ	AX, (m_morebuf+gobuf_sp)(BX)
+	get_tls(CX)
+	MOVQ	g(CX), SI
+	MOVQ	SI, (m_morebuf+gobuf_g)(BX)
+
+	// 设置当前的执行栈（g.sched）为 f
+	MOVQ	0(SP), AX // f's PC
+	MOVQ	AX, (g_sched+gobuf_pc)(SI)
+	MOVQ	SI, (g_sched+gobuf_g)(SI)
+	LEAQ	8(SP), AX // f's SP
+	MOVQ	AX, (g_sched+gobuf_sp)(SI)
+	MOVQ	BP, (g_sched+gobuf_bp)(SI)
+	MOVQ	DX, (g_sched+gobuf_ctxt)(SI)
+
+	// 切换到 g0 栈上调用 newstack
+	MOVQ	m_g0(BX), BX
+	MOVQ	BX, g(CX)
+	MOVQ	(g_sched+gobuf_sp)(BX), SP
+	CALL	runtime·newstack(SB)
+	CALL	runtime·abort(SB)	// crash if newstack returns
+	RET
+</code></pre>
+<p><code>newstack</code> 在前半部分承担了对 Goroutine 进行抢占的任务[[Go 协作与抢占]]，在后半部分则是真正的扩张。</p>
+<pre><code class="language-go">func newstack() {
+  // g0
+	thisg := getg()
+  ......
+
+  // 寻找要执行的 g
+	gp := thisg.m.curg
+
+  ......
+
+	morebuf := thisg.m.morebuf
+	thisg.m.morebuf.pc = 0
+	thisg.m.morebuf.lr = 0
+	thisg.m.morebuf.sp = 0
+	thisg.m.morebuf.g = 0
+
+	......
+	sp := gp.sched.sp
+	if sys.ArchFamily == sys.AMD64 || sys.ArchFamily == sys.I386 || sys.ArchFamily == sys.WASM {
+		// 对 morestack 的调用花费了一个字，是因为 call 指令吗？
+		sp -= sys.PtrSize
+	}
+
+	// 分配一个更大（2倍）的栈并移动
+	oldsize := gp.stack.hi - gp.stack.lo
+	newsize := oldsize * 2
+
+  // 需要的栈太大， 直接溢出
+	if newsize &gt; maxstacksize {
+		print(&quot;runtime: goroutine stack exceeds &quot;, maxstacksize, &quot;-byte limit\n&quot;)
+		print(&quot;runtime: sp=&quot;, hex(sp), &quot; stack=[&quot;, hex(gp.stack.lo), &quot;, &quot;, hex(gp.stack.hi), &quot;]\n&quot;)
+		throw(&quot;stack overflow&quot;)
+	}
+
+  // goroutine 必须是正在执行中才会来调用 newstack，所以状态一定是 Grunning(or Gscanrunning)
+  // 转为 Gcopystack
+	casgstatus(gp, _Grunning, _Gcopystack)
+
+	// 因为 goroutine 处于 Gcopystack 状态，所以我们在复制栈时不会被并发的 gc 影响。
+	copystack(gp, newsize)
+  ......
+  // 继续执行
+	casgstatus(gp, _Gcopystack, _Grunning)
+	gogo(&amp;gp.sched)
+}
+</code></pre>
+<h3 id="栈的拷贝">栈的拷贝</h3>
+<p>栈拷贝的难点在于 Go 栈上的变量会包含自己的地址，当我们拷贝了一个指向原栈的指针时，拷贝后的指针就会变为无效指针。所以 Go 的策略是<strong>只有栈上分配的指针才能指向栈上的地址，否则这个指针指向的对象会重新在堆中进行分配（逃逸）。</strong></p>
+<pre><code class="language-go">func copystack(gp *g, newsize uintptr) {
+  // 旧栈
+	old := gp.stack
+	used := old.hi - gp.sched.sp
+
+	// 获取新栈
+	new := stackalloc(uint32(newsize))
+
+	// 计算调节幅度
+	var adjinfo adjustinfo
+	adjinfo.old = old
+	adjinfo.delta = new.hi - old.hi
+
+	// 调整 sudog，必要时与 channel 操作同步
+	ncopy := used
+	if !gp.activeStackChans {
+		adjustsudogs(gp, &amp;adjinfo)
+	} else {
+		adjinfo.sghi = findsghi(gp, old)
+		ncopy -= syncadjustsudogs(gp, used, &amp;adjinfo)
+	}
+
+	// 复制栈
+	memmove(unsafe.Pointer(new.hi-ncopy), unsafe.Pointer(old.hi-ncopy), ncopy)
+
+	// 新栈替换旧栈
+	gp.stack = new
+	gp.stackguard0 = new.lo + _StackGuard // 注意：可能会破坏一个抢占请求
+	gp.sched.sp = new.hi - used
+	gp.stktopsp += adjinfo.delta
+
+	// 释放旧栈
+	if stackPoisonCopy != 0 {
+		fillstack(old, 0xfc)
+	}
+	stackfree(old)
+}
+</code></pre>
+<h3 id="栈的收缩">栈的收缩</h3>
+<p>栈的收缩发生在 GC 时</p>
+<pre><code class="language-go">func scanstack(gp *g, gcw *gcWork) {
+  ......
+	switch readgstatus(gp) &amp;^ _Gscan {
+	default:
+		print(&quot;runtime: gp=&quot;, gp, &quot;, goid=&quot;, gp.goid, &quot;, gp-&gt;atomicstatus=&quot;, readgstatus(gp), &quot;\n&quot;)
+		throw(&quot;mark - bad status&quot;)
+	case _Gdead:
+		return
+	case _Grunning:
+		print(&quot;runtime: gp=&quot;, gp, &quot;, goid=&quot;, gp.goid, &quot;, gp-&gt;atomicstatus=&quot;, readgstatus(gp), &quot;\n&quot;)
+		throw(&quot;scanstack: goroutine not stopped&quot;)
+	case _Grunnable, _Gsyscall, _Gwaiting:
+		// 只在这三种状态下才能收缩
+	}
+  ......
+  // 检查是否能够安全的收缩栈，比如系统调用时不可以，因为可能有指向栈的指针。
+	if isShrinkStackSafe(gp) {
+		// Shrink the stack if not much of it is being used.
+		shrinkstack(gp)
+	} else {
+		// Otherwise, shrink the stack at the next sync safe point.
+		gp.preemptShrink = true
+	}
+  ......
+}
+
+func shrinkstack(gp *g) {
+	oldsize := gp.stack.hi - gp.stack.lo
+	newsize := oldsize / 2 // 收缩幅度为减半
+	// 但不能小于最小栈大小
+	if newsize &lt; _FixedStack {
+		return
+	}
+	// 仅当栈使用量小于四分之一时才会对栈进行收缩
+	avail := gp.stack.hi - gp.stack.lo
+	if used := gp.stack.hi - gp.sched.sp + _StackLimit; used &gt;= avail/4 {
+		return
+	}
+
+	copystack(gp, newsize)
+}
+</code></pre>
+<h2 id="goroutine-执行现场">Goroutine 执行现场</h2>
+<p>在上面的 <code>morestack</code> 中可以看到一些对 <code>g.sched(gobuf)</code> 字段的处理：</p>
+<pre><code class="language-assembly">	// 设置当前的执行栈（g.sched）为 f
+	MOVQ	0(SP), AX // f's PC
+	MOVQ	AX, (g_sched+gobuf_pc)(SI)
+	MOVQ	SI, (g_sched+gobuf_g)(SI)
+	LEAQ	8(SP), AX // f's SP
+	MOVQ	AX, (g_sched+gobuf_sp)(SI)
+	MOVQ	BP, (g_sched+gobuf_bp)(SI)
+	MOVQ	DX, (g_sched+gobuf_ctxt)(SI)
+</code></pre>
+<p>以及调用 <code>gogo</code> 函数时需要传入 <code>gobuf</code>：</p>
+<pre><code class="language-go">func newstack() {
+	gogo(&amp;gp.sched)
+}
+</code></pre>
+<p>剩余内容在 [[Go runtime]] 中也有体现。</p>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/Oj_Hy57cD/" class="tag">
+                    Go语言学习笔记
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/aa1vxy4S8/" class="tag">
+                    go
+                  </a>
+                
+              </div>
+            
+            
+              <div class="next-post">
+                <div class="next">下一篇</div>
+                <a href="https://cnbailian.github.io/post/kubernetes-network-notes/">
+                  <h3 class="post-title">
+                    Kubernetes 网络笔记
+                  </h3>
+                </a>
+              </div>
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>关于 Kubernetes 动态资源分配（DRA） | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="DRA（Dynamic Resource Allocation） 的引入，标志着 Kubernetes 从“容器管理”向“资源智能管理”的重大演进。它不仅解决了现有资源管理模型的痛点，还为未来异构硬件和复杂工作负载提供了原生支持。在接下来的..." />
+    <meta name="keywords" content="" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">关于 Kubernetes 动态资源分配（DRA）</h2>
+            <div class="post-date">2025-09-15</div>
+            
+            <div class="post-content" v-pre>
+              <p>DRA（Dynamic Resource Allocation） 的引入，标志着 Kubernetes 从“容器管理”向“资源智能管理”的重大演进。它不仅解决了现有资源管理模型的痛点，还为未来异构硬件和复杂工作负载提供了原生支持。在接下来的文章中，本文将深入探讨 DRA 的设计背景、核心架构与关键 KEP 细节，帮助开发者全面理解这一革命性框架。</p>
+<!--more-->
+<h2 id="引言为什么需要-dra-框架">引言：为什么需要 DRA 框架？</h2>
+<p>在云原生浪潮下，越来越多的应用开始加入其中。很多属于新一代的工作负载（workload），包括人工智能/机器学习（AI/ML）、高性能计算（HPC）、5G/电信网络等。区别于传统的无状态、同质化服务，它们本质上是复杂、有状态且对性能极度敏感的系统。并且它们运行的基础高度依赖于对底层硬件的直接使用，这些硬件包括 GPU、现场可编程门阵列（FPGA）、支持 SR-IOV 的高性能网卡（NIC）等。这些复杂的异构硬件资源，对 Kubernetes 传统的硬件资源管理系统提出了挑战。</p>
+<h3 id="传统资源管理的局限性">传统资源管理的局限性</h3>
+<p>Kubernetes 传统的设备插件（Device Plugin）框架允许硬件厂商向 Kubelet 报告节点上的硬件资源。在注册阶段，作为 DaemonSet 部署在每个节点上的硬件厂商的插件程序会向 Kubelet 报告它所能感知到的硬件资源名称及其数量。Kubelet 会将这些资源信息作为节点上可分配的资源（allocatable resources）向 API Server 汇报。当 Pod 通过 <code>resources</code> 字段请求特定硬件资源时，Kubelet 会调用插件暴露的 Allocate 接口，插件会将对应设备准备好并提供给 Pod。</p>
+<p>这样的框架已经无法适用于新一代工作负载的需求，其根本原因在于框架的核心抽象：<strong>将硬件资源抽象为一个不透明的整数计数器</strong>。在这个抽象模型下，Pod 对硬件资源的请求本质上是请求一个计数单位，虽然解决了基本的设备发现和分配问题，但在面对新一代工作负载时暴露出诸多局限性。</p>
+<h4 id="简单抽象导致的参数丢失">简单抽象导致的参数丢失</h4>
+<p>在 DevicePlugin 的抽象模型下，最致命的问题就是无法表达工作负载所需要的设备的特定功能或参数。这种能力的缺失，迫使硬件厂商基于 Kubernetes 的其他能力来为 DevicePlugin 提供助力。</p>
+<p>最简单的做法是利用节点标签（node labels），硬件厂商会将节点上设备的各种属性作为标签附加到 node labels 中。Pod 必须通过 <code>nodeSelector</code> 或 <code>nodeAffinity</code> 来间接地表达对设备属性的需求。这种做法虽然简单但无法支持复杂场景，并且将硬件资源的请求和节点选择的逻辑耦合在了一起，降低了调度的灵活性。</p>
+<p>现在更常见也更为复杂的模式是结合 Admission Webhook 和自定义 Scheduler 一起使用。Webhook 用于拦截 Pod 的创建请求，通过解析 Pod 上特定的注解（annotations）来获取参数请求信息，随后将所需要的环境变量或者挂载配置注入到 Pod 中。自定义 Scheduler 则是解析参数请求信息后为设备的请求提供调度逻辑。这种模式极大地增加了系统的复杂性和可维护性。</p>
+<h4 id="设备不能在容器之间共享">设备不能在容器之间共享</h4>
+<p>在 DevicePlugin 的官方文档中明确指出了“设备不能在容器之间共享”。即使工作负载只使用设备的一小部分资源，整个设备也会被独占，这会导致硬件资源利用率非常低。</p>
+<p>对于高级 GPU 这样昂贵的资源，这是一个巨大的限制。尽管有着 Multi-Process Service (MPS) 和时间分片(Time-Slicing) 等共享技术，但却无法直接应用于 Kubernetes 中。目前硬件厂商们实现的共享策略的手段都是通过 <code>ConfigMap</code> 进行配置，并由插件在节点本地进行解释和实现。</p>
+<h4 id="缺少拓扑感知能力">缺少拓扑感知能力</h4>
+<p>传统的 DevicePlugin 无法表达复杂的拓扑需求，而现代工作负载对高性能的需求又会直接体现在硬件拓扑上。例如，两块 GPU 之间可以通过总线来直接进行 P2P 数据传输，或是通过 NVLink 互联来获取更高的数据传输效率，也可以让 GPU 与高性能网卡处于同一个 PCIe 总线来获取更低的延迟。</p>
+<p>但是在 DevicePlugin 框架下的调度模型中，没有对此的感知能力。于是需要在自定义 Scheduler 中获取这些关键信息来决策调度。</p>
+<h4 id="总结新框架的必然性">总结：新框架的必然性</h4>
+<p>DevicePlugin 框架的设计缺陷在于其最核心的抽象模型，随着硬件越来越强大，对应的需求会导致围绕 DevicePlugin 所形成的方案的复杂性也会越来越高。在实战中，我发现发展到后来，DevicePlugin 本身所承担的功能只剩下向 Kubelet 中汇报硬件资源信息，剩下的调度、挂载等逻辑都被其他组件承担。这毫无疑问地意味着框架设计已经跟不上时代了。</p>
+<p>整个Kubernetes 社群逐渐形成共识：需要一个全新的、原生的、声明式的资源分配框架。这个新框架必须能够将装置的丰富特性、可共享性以及拓扑结构作为一等公民纳入Kubernetes API 和调度逻辑中。动态资源分配(DRA) 正是应对这一历史必然趋势而生的架构重构。</p>
+<h3 id="dra-核心价值主张">DRA 核心价值主张</h3>
+<p>Kubernetes 动态资源分配（Dynamic Resource Allocation，简称 DRA）是 Kubernetes 生态系统中一项革命性的功能，它从根本上改变了专用硬件资源在容器化环境中的管理方式。它引入了一套全新的、基于API 的声明式原语，使得复杂硬件的请求、分配和配置成为Kubernetes 的原生能力。</p>
+<h4 id="设计理念">设计理念</h4>
+<p>DRA 的设计灵感来源于 Kubernetes 中成熟且广泛理解的动态存储供应模型，即 PersistentVolumes (PV) 和 PersistentVolumeClaims (PVC)。这种设计上的类比为工程师提供了直观的心理模型：</p>
+<ul>
+<li>
+<p><strong>DeviceClass</strong> 类似于 StorageClass：定义可用硬件资源的类型和特性；</p>
+</li>
+<li>
+<p><strong>ResourceClaim</strong> 类似于 PersistentVolumeClaims (PVC)：表示用户对特定硬件实例的声明式请求；</p>
+</li>
+<li>
+<p><strong>ResourceSlice</strong> 类似于 PersistentVolumes (PV)：由 DRA 驱动程序发布，代表集群中实际可用的物理设备资源。</p>
+</li>
+</ul>
+<p>这种设计哲学的核心在于将硬件资源抽象化，使其成为 Kubernetes 原生的、可声明式管理的对象。相比于 DevicePlugin 不透明的整数计数器抽象，DRA 不仅保持了 Kubernetes 一贯的声明式 API 风格，还为复杂硬件资源的生命周期管理提供了统一、标准化的接口。这种抽象层使得应用开发者无需关心底层硬件的具体实现细节，只需声明所需的资源特性，由系统自动完成最优的资源匹配和分配。</p>
+<h4 id="核心价值主张">核心价值主张</h4>
+<p><strong>突破传统资源管理的局限性</strong></p>
+<p>DRA 的诞生源于对传统 DevicePlugin 框架根本性局限的深刻认识。传统的 Kubernetes 资源管理模型围绕 CPU 和内存等简单可计数资源设计，这种模型在面对现代专用硬件时显得力不从心。DevicePlugin 框架虽然在 Kubernetes 1.8 中引入，试图解决专用硬件管理问题，但其架构设计存在诸多限制：设备无法在容器间共享、只支持整数类型资源分配、缺乏复杂配置能力、调度灵活性不足等。</p>
+<p>DRA 通过引入全新的 API 设计，彻底解决了这些问题。它不再将硬件设备视为简单的整数计数器，而是将其抽象为具有丰富属性和复杂配置需求的对象。这种范式转变使得 Kubernetes 能够原生支持现代硬件的复杂需求，为云原生应用提供了前所未有的硬件资源管理能力。</p>
+<p><strong>声明式硬件资源管理</strong></p>
+<p>DRA 的核心价值在于将声明式管理理念扩展到硬件资源领域。用户不再需要关心底层硬件的具体实现细节，只需声明所需的资源特性和配置要求，系统会自动完成最优的资源匹配和分配。这种抽象层不仅简化了应用开发和部署流程，还为跨云、跨平台的应用迁移提供了统一的接口。</p>
+<p><strong>灵活的资源共享与分配</strong></p>
+<p>DRA 最具革命性的特性之一是其对资源共享的原生支持。与传统 DevicePlugin 的独占模式不同，DRA 允许同一硬件资源在多个 Pod 或容器之间安全共享。这种能力对于提高硬件利用率、降低成本具有重要意义，特别是在 AI/ML 工作负载中，许多应用并不需要独占整个 GPU 的计算能力。</p>
+<h2 id="dra-框架下一代资源管理的革命">DRA 框架：下一代资源管理的革命</h2>
+<p>DRA 的核心目标是实现资源请求的灵活性和高效性，让 Pod 能够声明性地请求特定类型的资源，而无需用户手动管理节点标签、设备拓扑或资源配额。这不仅简化了运维复杂度，还提升了资源利用率，尤其适用于 AI/ML 工作负载、高性能计算（HPC）等场景。以下将详细阐述 DRA 的架构设计、核心 API 对象以及相关 KEP。</p>
+<h3 id="技术架构设计">技术架构设计</h3>
+<p>DRA 采用了清晰的分层架构设计，将复杂的硬件资源管理问题分解为多个相互协作的组件。这种设计不仅提高了系统的可维护性和扩展性，还为不同层次的定制化需求提供了灵活的接口。</p>
+<p>架构可分为三层：用户层（Workload Operators）、Kubernetes 核心层（Scheduler 和 Kubelet）和驱动层（Device Drivers）。</p>
+<p><strong>用户层：</strong> 用于资源声明，创建 ResourceClaimTemplate 和 Pod Spec，引用 Claim。</p>
+<p><strong>Kubernetes 控制平面层：</strong> 由 Kubernetes 原生组件负责全局资源状态管理、调度决策和策略执行。API Server 存储资源对象，kube-scheduler 中的 DRA plugin 进行调度与分配，kube-controller-manager 为 Pod  生成 Claim。</p>
+<p><strong>节点与驱动层：</strong> 由硬件厂商或第三方开发的 DRA 驱动程序与 kubelet 配合实现，负责具体硬件的发现、管理和配置。kubelet 收到调度的 Pod 后，会调用 DRA 驱动程序提供的 <code>PrepareResourceClaims</code> 方法，DRA 驱动程序会根据资源声明为 Pod 进行资源准备和挂载配置。</p>
+<p>在这样的一个架构设计中，DRA 扮演了重要的角色。它会将硬件资源进行抽象并上报，同时会将上层应用程序对硬件资源的抽象需求，精准地转换为对底层硬件的具体、可执行的配置操作，并将执行结果以结构化信息的形式反馈给控制平面。整个架构设计形成了一个完整的、声明式的、自我调节的自动化闭环。</p>
+<h3 id="核心-api-对象设计">核心 API 对象设计</h3>
+<p><strong>DeviceClass（设备类型定义）</strong></p>
+<p>DeviceClass 定义了可以被声明的设备类别，以及在声明中选择特定设备属性的方式。通常在安装 DRA 驱动程序时就会创建，它们使用通用表达式语言（CEL）根据设备属性过滤设备。</p>
+<p>DeviceClass 的主要特性：</p>
+<ul>
+<li>使用 CEL 表达式进行设备选择</li>
+<li>支持复杂的属性匹配逻辑</li>
+<li>可以定义成本优化或高性能等不同类别</li>
+<li>为应用操作员提供硬件类别的抽象</li>
+</ul>
+<p>DeviceClass 这种基于表达式的过滤机制远比传统的标签选择器更加强大和灵活。它可以基于设备的任意属性进行筛选，包括硬件规格、性能指标、拓扑位置等：</p>
+<pre><code class="language-yaml">apiVersion: resource.k8s.io/v1beta1
+kind: DeviceClass
+metadata:
+  name: gpu.example.com
+spec:
+  selectors:
+  - cel: 
+      expression: &quot;device.driver == 'gpu.example.com'&quot;
+</code></pre>
+<p><strong>ResourceSlice（资源切片）</strong></p>
+<p>ResourceSlice 由 DRA 驱动程序发布，用于通告每个节点上的可用资源。这些切片包含详细的设备属性，包括内存容量、架构版本和供应商特定的功能。调度器使用这些信息将 Pod 需求与可用资源进行匹配。</p>
+<p>ResourceSlice 中可包含的关键信息包括：设备的详细属性和规格、设备的当前状态和可用性、供应商特定的功能描述、拓扑信息等：</p>
+<pre><code class="language-yaml">apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  name: gpu-slice
+spec:
+  driver: gpu.example.com
+  pool:
+    name: gpu-pool
+  nodeName: node
+  devices:
+    - name: gpu-0
+      attributes:
+        index:
+          int: &quot;0&quot;
+        uuid:
+          string: &quot;uuid-0&quot;
+        model:
+          string: &quot;LATEST-GPU-MODEL&quot;
+        topo:
+          int: &quot;0&quot;
+        driverVersion:
+          version: &quot;1.0.0&quot;
+    - name: gpu-1
+      attributes:
+        index:
+          int: &quot;1&quot;
+        uuid:
+          string: &quot;uuid-1&quot;
+        model:
+          string: &quot;LATEST-GPU-MODEL&quot;
+        topo:
+          int: &quot;0&quot;
+        driverVersion:
+          version: &quot;1.0.0&quot;
+  capacity:
+    memory:
+      value: &quot;80Gi&quot;
+</code></pre>
+<p><strong>ResourceClaim（资源声明）/ResourceClaimTemplate（资源声明模板）</strong></p>
+<p>ResourceClaim 描述对特定资源的请求，是用户与 DRA 系统交互的主要接口。它允许 Pod 通过使用 ResourceClaim 在 DeviceClass 内过滤特定参数来请求硬件资源。ResourceClaimTemplate 用于 Deployment 或 StatefulSet 等工作负载，用于为其创建的每个 Pod 都创建一个独立的 ResourceClaim 资源。</p>
+<p>ResourceClaim 与 DeviceClass 一样支持使用 CEL 表达式来声明复杂的约束条件，可以确保请求到符合的硬件设备，或是分配的多个设备满足特定的拓扑要求：</p>
+<pre><code class="language-yaml">apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  namespace: gpu-claim
+  name: gpu-claim
+spec:
+  devices:
+    requests:
+    - name: primary-gpu
+      exactly:
+        deviceClassName: gpu.example.com
+        selectors:
+        - cel:
+            expression: 'device.attributes[&quot;topo&quot;] == &quot;0&quot;'
+    - name: secondary-gpu
+      exactly:
+        deviceClassName: gpu.example.com
+        selectors:
+        - cel:
+            expression: 'device.attributes[&quot;topo&quot;] == &quot;0&quot;'
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-claim
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: [&quot;bash&quot;, &quot;-c&quot;]
+    args: [&quot;export; trap 'exit 0' TERM; sleep 9999 &amp; wait&quot;]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimName: gpu-claim
+</code></pre>
+<h3 id="相关重点-kep-解读">相关重点 KEP 解读</h3>
+<p><strong><a href="https://github.com/kubernetes/enhancements/issues/3063">KEP-3063</a>: DRA: control plane controller (&quot;classic DRA&quot;)</strong></p>
+<p>DRA 最初始的版本，于 1.26 版本引入，因完全不透明的参数和资源可用性以及 API Server 和 DRA Driver 之间的复杂协商问题，在 1.32 版本被撤回。</p>
+<p><strong><a href="https://github.com/kubernetes/enhancements/issues/4381">KEP-4381</a>: DRA: structured parameters</strong></p>
+<p>KEP-4381 最初是作为 KEP-3063 的结构化参数扩展引入，但后来两者的角色发生了反转，KEP-4381 成为DRA 的基础功能定义，而 KEP-3063 变成 &quot;classic DRA&quot;。此 KEP 于 1.30 版本引入，1.34 版本 GA。</p>
+<p>KEP-4381 的主要动机是为了解决 KEP-3063 DRA 框架中存在的缺陷。在最初的设计中，资源分配依赖于供应商特定 CRD 中定义的不透明参数。虽然这样允许硬件供应商灵活地实现自定义逻辑，但也带来很多痛点：调度器智能完全依赖于与 DRA Driver 的交互、频繁交互带来的性能影响、不同供应商带来的复杂性等等。于是，KEP-4381 的目标就是建立一个更高效，可扩展，且对用户友好的硬件资源分配系统。该系统符合 Kubernetes 的声明式理念，降低复杂性，同时提高资源密集型工作负载的性能。</p>
+<p>经过 KEP-4381 对原始框架的增强，DRA 核心 API 变为上文所描述的架构：<code>DeviceClass</code>、<code>ResourceSlice</code>、<code>ResourceClaim</code>、<code>ResourceClaimTemplate</code> 等 API 与 Kubernetes 控制平面和 DRA Driver 共同构成了整个系统。</p>
+<p><strong><a href="https://github.com/kubernetes/enhancements/issues/4817">KEP-4817</a>：DRA: Resource Claim Status with possible standardized network interface data</strong></p>
+<p>这是一个很重要的提案，核心是解决了一个在之前设计中存在的运行时信息不透明的问题：当一个硬件资源在节点上被分配和使用后，集群中的其他组件如何获得其运行时的状态数据。</p>
+<p>KEP-4817 的核心动机是扩展 DRA 框架，提供一个标准化机制，让 DRA 驱动程序在分配资源后更新 ResourceClaim 的状态，从而增强了硬件资源的可观察性。这不仅简化了网络设备的集成，还支持更广泛的设备类型，如 GPU 或存储设备。在 KEP-4817 之前，该信息只能在 Driver 内部使用，没有标准化的暴露方式。</p>
+<p>KEP-4817 的设计思路围绕扩展 ResourceClaim API 对象展开，重点是引入一个新字段（devices）来存储设备状态信息，同时确保兼容性和安全性。核心思想是：DRA 驱动程序在资源分配阶段后，能够更新 ResourceClaim 的 status 字段，提供运行时的设备数据。这避免了在 Pod 调度前就固定设备细节，而是允许动态报告。</p>
+<p><strong><a href="https://github.com/kubernetes/enhancements/issues/5075">KEP-5075</a>：DRA: Consumable Capacity</strong></p>
+<p>在早期的 DRA 设计中，与过去的 DevicePlugin 有一个相同的特点，就是侧重于分配整数个的现有资源。调度器仅仅是通过 CEL 匹配标签，标签匹配后分配对应的整数个设备。KEP-5075 针对这一痛点，提出可消耗容量（Consumable Capacity）的概念，将显存、带宽等资源转化为可被调度器理解和计算的实体。</p>
+<p>在这样的设计中，调度器深度参与了可共享设备的资源计算逻辑中。当调度器对某个 Pod 进行调度时，它会根据该 Pod 请求的资源，结合该节点上已分配的资源，对该节点的总资源容量进行计算。只有当剩余容量满足时，才会真正执行调度。这意味着，Kubernetes 达成了原生的、基于容量（Capacity）的、可信赖的硬件资源共享。</p>
+<p>关于共享资源的 KEP 很多，包括 <a href="https://github.com/kubernetes/enhancements/issues/4815">KEP 4815</a>、<a href="https://github.com/kubernetes/enhancements/issues/5007">KEP 5007</a> 以及 <a href="https://github.com/kubernetes/enhancements/issues/4817">KEP 4817</a>。目前 DRA 正在高速发展中，现在这些 KEP 大多都在 alpha 甚至 pre-alpha 阶段，后续真正成熟可用的形态还未可知。</p>
+<h2 id="结语">结语</h2>
+<p>目前 DRA 还处于早期发展阶段，虽然核心功能已经 GA，但仍有许多强大的扩展功能还在 alpha 阶段，这代表当前阶段的使用者们还需要承担一定的风险。但毫无疑问 DRA 的前景是光明的，它已经清晰地展示了其作为 Kubernetes 下一代资源管理基石的潜力。它不仅解决了过去遗留的技术债，更为云原生生态的未来创新铺平了道路。</p>
+<h2 id="参考文章">参考文章</h2>
+<p><a href="https://hackmd.io/@thc1006/B1KbZT1Nll/">Kubernetes GPU &amp; 异构硬体管理的终极指南：深入动态资源分配(DRA) 核心机制与未来</a></p>
+<p><a href="https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/">Kubernetes Dynamic Resource Allocation</a></p>
+<p><a href="https://github.com/NVIDIA/k8s-dra-driver-gpu/">NVIDIA dra driver</a></p>
+<p><a href="https://github.com/kubernetes/enhancements">Kubernetes enhancements</a></p>
+
+            </div>
+            
+            
+              <div class="next-post">
+                <div class="next">下一篇</div>
+                <a href="https://cnbailian.github.io/post/kubernetes-samplecontroller/">
+                  <h3 class="post-title">
+                    从 SampleController 项目看 kubernetes controller 的设计——笔记
+                  </h3>
+                </a>
+              </div>
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

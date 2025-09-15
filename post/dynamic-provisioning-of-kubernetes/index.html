@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>Kubernetes 的 Dynamic Provisioning 实现 | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="存储一直是容器运行的关键部分，Kubernetes 为此做了很多努力，从一开始的 Pod Volumes、PV(Persistent Volumes) 与 PVC(Persistent Volume Claim)，到 StorageClas..." />
+    <meta name="keywords" content="kubernetes,storage" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">Kubernetes 的 Dynamic Provisioning 实现</h2>
+            <div class="post-date">2020-03-11</div>
+            
+            <div class="post-content" v-pre>
+              <p>存储一直是容器运行的关键部分，Kubernetes 为此做了很多努力，从一开始的 Pod Volumes、PV(Persistent Volumes) 与 PVC(Persistent Volume Claim)，到 StorageClass 与 Dynamic Provisioning，再到现在 “out-of-tree” 的 CSI(Container Storage Interface)，Kubernetes 社区一直在演进存储的实现。</p>
+<p>前面基础的就不讲了，我们从 StorageClass 与 Dynamic Provisioning 开始了解。</p>
+<!--more-->  
+<h2 id="关于-storageclass-与-dynamic-provisioning">关于 StorageClass 与 Dynamic Provisioning</h2>
+<p>StorageClass 为存储提供了“类”的概念，使得 PVC 可以申请不同类别的 PV，以满足用户不同质量、不同策略要求的存储需求。但仅仅是这样还不够，我们还需要手动去创建存储，创建 PV 并与之绑定。所以 StorageClass 还有一个功能就是<strong>动态卷供应（Dynamic Provisioning）</strong>，通过它，Kubernetes 可以根据用户的需求，自动创建其需要的存储。</p>
+<h3 id="如何使用">如何使用</h3>
+<p>我们需要创建 StorageClass 对象，通过 <code>provisioner</code> 属性指定所用的动态供应的种类：</p>
+<pre><code class="language-yaml">apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: standard
+provisioner: kubernetes.io/aws-ebs
+parameters:
+  type: gp2
+</code></pre>
+<p>创建好以后，所有指定这个 StorageClass 的 PVC 都会动态分配 PV：</p>
+<pre><code class="language-yaml">apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: example
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+</code></pre>
+<p>当然，也需要些其他的配置，比如 aws-ebs 需要在启动参数中加入 <code>--cloud-provider=aws</code>。Glusterfs 需要在集群节点中预先安装好分布式存储等。具体请参考官方手册或 Google，这里不赘述了。</p>
+<h3 id="external-provisioner">External provisioner</h3>
+<p>官方提供了许多 Provisioner 的实现：AWSElasticBlockStore、AzureFile、Glusterfs <a href="https://kubernetes.io/docs/concepts/storage/storage-classes/#provisioner">等等</a>，这些都是 “in-tree” 的，所以官方也在实验一些 external provisioner 的实现方式。在 <strong><a href="https://github.com/kubernetes-incubator/external-storage">kubernetes-incubator/external-storage</a></strong> 这个仓库中，就有一些孵化中的项目，不过随着 CSI 的出现，应该已经孵死了。官方也正在将 “in-tree” 的存储实现迁移到 CSI 上。</p>
+<h2 id="如何实现">如何实现</h2>
+<p>我们根据 external-storage 仓库中的项目，简单的分析一下如何自定义一个 Dynamic Provisioner。</p>
+<p>其实这个仓库中的项目都很简单，文件没有几个，代码也没有几行。这是因为它们都是基于官方社区的 <a href="https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner#sig-storage-lib-external-provisioner">library</a> 实现的，它实现了 <code>Provisioner Controller</code> 的整个流程，包括监听、创建 PV 资源等，我们只需要实现 <code>Provisioner</code> 接口的两个方法就可以：</p>
+<pre><code>// Provisioner is an interface that creates templates for PersistentVolumes
+// and can create the volume as a new resource in the infrastructure provider.
+// It can also remove the volume it created from the underlying storage
+// provider.
+type Provisioner interface {
+	// Provision creates a volume i.e. the storage asset and returns a PV object
+	// for the volume
+	Provision(ProvisionOptions) (*v1.PersistentVolume, error)
+	// Delete removes the storage asset that was created by Provision backing the
+	// given PV. Does not delete the PV object itself.
+	//
+	// May return IgnoredError to indicate that the call has been ignored and no
+	// action taken.
+	Delete(*v1.PersistentVolume) error
+}
+</code></pre>
+<p><code>Provision</code> 方法需要根据给定的数据，分配存储，响应 PV 对象。<code>Delete</code> 方法需要在 PV 删除时，也删除对应存储中的数据。</p>
+<p>我们选择仓库中的 nfs 项目来进行详细的分析，它不同于其他 client 类项目，它还维护了一份 nfs server，使得它可以不基于其他外部存储服务。可以在 <code>main</code> 函数中看到，通过 <code>runServer flag</code> 判断是否需要启动服务，默认为 <code>true</code>：</p>
+<pre><code>	if *runServer {
+		......
+		go func() {
+			for {
+				// This blocks until server exits (presumably due to an error)
+				err = server.Run(ganeshaLog, ganeshaPid, ganeshaConfig)
+				if err != nil {
+					glog.Errorf(&quot;NFS server Exited Unexpectedly with err: %v&quot;, err)
+				}
+
+				// take a moment before trying to restart
+				time.Sleep(time.Second)
+			}
+		}()
+		// Wait for NFS server to come up before continuing provisioner process
+		time.Sleep(5 * time.Second)
+	}
+</code></pre>
+<p>随后通过 <code>Provisioner Controller</code> 的 <code>Run</code> 方法启动 Provisioner 服务：</p>
+<pre><code>	// Create the provisioner: it implements the Provisioner interface expected by
+	// the controller
+	nfsProvisioner := vol.NewNFSProvisioner(exportDir, clientset, outOfCluster, *useGanesha, ganeshaConfig, *enableXfsQuota, *serverHostname, *maxExports, *exportSubnet)
+
+	// Start the provision controller which will dynamically provision NFS PVs
+	pc := controller.NewProvisionController(
+		clientset,
+		*provisioner,
+		nfsProvisioner,
+		serverVersion.GitVersion,
+	)
+
+	pc.Run(wait.NeverStop)
+</code></pre>
+<p><code>NewNFSProvisioner</code> 返回的是实现了 <code>Provisioner</code> 接口的结构体：</p>
+<pre><code>type nfsProvisioner struct {
+  ......
+}
+
+var _ controller.Provisioner = &amp;nfsProvisioner{}
+</code></pre>
+<p>接下来就看下如何实现的 <code>Provision</code> 方法：</p>
+<pre><code>// options 里包含创建 pv 的数据，pvName、pvc、sc、selectedNode 等
+func (p *nfsProvisioner) Provision(options controller.ProvisionOptions) (*v1.PersistentVolume, error) {
+  // 在这里进行验证，创建目录等操作
+	volume, err := p.createVolume(options)
+	if err != nil {
+		return nil, err
+	}
+
+	annotations := make(map[string]string)
+  ......
+
+	pv := &amp;v1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        options.PVName,
+			Labels:      map[string]string{},
+			Annotations: annotations,
+		},
+		Spec: v1.PersistentVolumeSpec{
+			PersistentVolumeReclaimPolicy: *options.StorageClass.ReclaimPolicy,
+			AccessModes:                   options.PVC.Spec.AccessModes,
+			Capacity: v1.ResourceList{
+				v1.ResourceName(v1.ResourceStorage): options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)],
+			},
+			PersistentVolumeSource: v1.PersistentVolumeSource{
+				NFS: &amp;v1.NFSVolumeSource{
+					Server:   volume.server,
+					Path:     volume.path,
+					ReadOnly: false,
+				},
+			},
+			MountOptions: options.StorageClass.MountOptions,
+		},
+	}
+
+	return pv, nil
+}
+
+func (p *nfsProvisioner) createVolume(options controller.ProvisionOptions) (volume, error) {
+	// 在这里验证剩余磁盘空间是否超出请求大小，只计算当前剩余
+  gid, rootSquash, mountOptions, err := p.validateOptions(options)
+	if err != nil {
+		return volume{}, fmt.Errorf(&quot;error validating options for volume: %v&quot;, err)
+	}
+  ......
+  // 根据 pvc 创建目录
+	path := path.Join(p.exportDir, options.PVName)
+
+	err = p.createDirectory(options.PVName, gid)
+	if err != nil {
+		return volume{}, fmt.Errorf(&quot;error creating directory for volume: %v&quot;, err)
+	}
+  ......
+}
+
+
+func (p *nfsProvisioner) validateOptions(options controller.ProvisionOptions) (string, bool, string, error) {
+  ......
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(p.exportDir, &amp;stat); err != nil {
+		return &quot;&quot;, false, &quot;&quot;, fmt.Errorf(&quot;error calling statfs on %v: %v&quot;, p.exportDir, err)
+	}
+	capacity := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
+	requestBytes := capacity.Value()
+	available := int64(stat.Bavail) * int64(stat.Bsize)
+	if requestBytes &gt; available {
+		return &quot;&quot;, false, &quot;&quot;, fmt.Errorf(&quot;insufficient available space %v bytes to satisfy claim for %v bytes&quot;, available, requestBytes)
+	}
+
+	return gid, rootSquash, mountOptions, nil
+}
+</code></pre>
+<p>然后是 <code>Delete</code> 方法的实现：</p>
+<pre><code>func (p *nfsProvisioner) Delete(volume *v1.PersistentVolume) error {
+  ......
+  // pv 删除后，删除对应的目录
+	err = p.deleteDirectory(volume)
+	if err != nil {
+		return fmt.Errorf(&quot;error deleting volume's backing path: %v&quot;, err)
+	}
+  ......
+	return nil
+}
+</code></pre>
+<p>这里只是简单的讲解下 <code>Provisioner</code> 的实现，省略了其他一些比如 <code>xfs quota</code> 等操作，有兴趣的可以去项目中看一下。顺便提一下，这个项目虽然部署了 nfs server，但没有部署成分布式存储，局限性很大，毕竟只是实验中的项目，生产环境慎用。</p>
+<h2 id="后记">后记</h2>
+<p>碰巧在项目中接触到了 nfs 这个 Provisioner，并且经过测试及源码分析验证了这个项目不可用。经过查阅学习之后写下了这篇文章，算是为以后学习 CSI 作准备吧。</p>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/rKzMZCB0T/" class="tag">
+                    kubernetes
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/tZFxZTmHR1/" class="tag">
+                    storage
+                  </a>
+                
+              </div>
+            
+            
+              <div class="next-post">
+                <div class="next">下一篇</div>
+                <a href="https://cnbailian.github.io/post/concurrency-and-scheduler-of-go/">
+                  <h3 class="post-title">
+                    Go 的并发性与调度器
+                  </h3>
+                </a>
+              </div>
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

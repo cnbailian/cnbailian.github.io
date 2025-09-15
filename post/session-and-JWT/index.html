@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>Session 与 JWT | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="关于 REST 与 HTTP 中无状态架构约束的思考之 Session 与 JWT
+  
+知识点
+
+
+无状态
+
+
+关于无状态，Fielding博士在论文的 3.4.3 与 5.1.3 中有所提及。
+
+
+《3.4.3 客户-无状态-服务器（C..." />
+    <meta name="keywords" content="REST,API" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">Session 与 JWT</h2>
+            <div class="post-date">2017-08-11</div>
+            
+            <div class="post-content" v-pre>
+              <p><strong>关于 REST 与 HTTP 中无状态架构约束的思考之 Session 与 JWT</strong></p>
+<!--more-->  
+<h3 id="知识点">知识点</h3>
+<ol>
+<li>
+<p><strong>无状态</strong></p>
+<ul>
+<li>
+<p>关于无状态，Fielding博士在论文的 3.4.3 与 5.1.3 中有所提及。</p>
+</li>
+<li>
+<p>《3.4.3 客户-无状态-服务器（Client-Stateless-Server）》</p>
+</li>
+<li>
+<blockquote>
+<p>客户-无状态-服务器风格源自客户-服务器风格，并且添加了额外的约束：在服务器组件至上不允许有<strong>会话状态（session state）</strong> 。从客户发给服务器的每个请求中，都必须包含理解请求所必须的全部信息，不能利用任何保存在服务器上的上下文（content），会话状态应全部保存在客户端。</p>
+</blockquote>
+</li>
+<li>
+<p>《5.1.3 无状态》中对于无状态的描述与 3.4.3 一致。</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Cookie</strong></p>
+<ul>
+<li>
+<p>说 session 之前先说一下 cookie，因为有太多人将 cookie 与 session 搞混了。</p>
+</li>
+<li>
+<blockquote>
+<p>cookie 最初由网景公司开发，是当前识别用户，实现持久会话的最好方式。</p>
+</blockquote>
+</li>
+<li>
+<blockquote>
+<p>可以笼统的将 cookie 分为两类：会话 cookie 和持久 cookie，会话 cookie 是一种临时 cookie，它记录了用户访问站点时的设置和偏好。用户退出浏览器时，会话 cookie 就被删除了。持久 cookie 的生存时间更长一些，它们存储在硬盘上，浏览器退出，计算机重启时它们仍然存在。会话 cookie 和持久 cookie 的唯一区别就是它们的过期时间。</p>
+</blockquote>
+</li>
+<li>
+<p>以上是《HTTP权威指南》一书中对于 cookie 的解释。</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Session ID</strong></p>
+<ul>
+<li>
+<p>会话 cookie 就是现在人们常说的 session，他的表现形式通常为：</p>
+</li>
+<li>
+<blockquote>
+<p>一个很短的由数字和字母组成的字符串键，它和服务器端的某个非常大的数据结构相关联。</p>
+</blockquote>
+</li>
+<li>
+<p>恩，上面是《RESTful Web APIs》对于 seesion 的看法，也就是 session ID。这也是我对于这个知识点想说明的，我针对的不是会话 cookie 的运行机制，而是<strong>使用字符串来代替会话状态，将会话状态全部存储于服务器端的使用方法</strong>。</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>JWT</strong></p>
+<ul>
+<li>
+<blockquote>
+<p>JSON Web Token（JWT）是一种开放标准（<a href="https://tools.ietf.org/html/rfc7519">RFC 7519</a>），它定义了一种紧凑且自成一体的方式，使用 JSON 格式安全地传输信息。</p>
+</blockquote>
+</li>
+<li>
+<p>这种格式有很多优点，我这里用于与 session ID 来比较的是它的<strong>自成一体</strong>。</p>
+</li>
+<li>
+<blockquote>
+<p>自成一体：这个载体（payload）包含所有的用户请求信息，避免频繁的查询数据库。</p>
+</blockquote>
+</li>
+<li>
+<p>是不是似曾相识的描述，没错，无状态也是这个标准：包含理解请求所必须的全部信息。</p>
+</li>
+</ul>
+</li>
+</ol>
+<h3 id="比较">比较</h3>
+<p>在我最初的想法里，是没有比较这个概念的，很明显，JWT 是符合无状态架构风格的，且它最常见的使用地点也是在认证授权部分，所以怎么看都是要比 seesion ID 要好用的。于是我去 v2ex 问了一下这个问题，<a href="https://www.v2ex.com/t/381996">《为什么 session 机制没有被 JWT 所取代?》</a>，很感谢V友们热心回答。经过整理总结，我也理解了 JWT 的不足与 session ID 的优点。</p>
+<h3 id="无状态架构的取舍">无状态架构的取舍</h3>
+<p>在说 JWT 与 session ID 的差异之前，先说一下关于无状态架构的取舍。</p>
+<p>Fielding博士是通过整理一系列基于网络应用的架构风格，并对其分类评估，而后有所取舍，组合成的 REST。不可能每种架构都只有优点没有缺点，无状态架构也一样，论文的 3.4.3小节 与 5.1.3小节，Fielding博士对于无状态的取舍有着详细的表述。</p>
+<blockquote>
+<p>这一约束产生了可见性，可靠性，可伸缩性三个架构属性，改善了可见性是因为监视系统不必为了确定一个请求的全部性质而去查看该请求之外的多个请求。改善了可靠性是因为它减轻了从局部故障中恢复的任务量。改善了可伸缩性是因为不必在多个请求之间保存状态，从而允许服务器组件迅速释放资源，并进一步简化其实现，因为服务器不必跨多个请求管理资源的使用情况。<br>
+与大多数架构抉择一样，无状态这一架构约束反映出了设计上的权衡点。其缺点是：由于不能将状态数据保存在服务器上的共享上下文中，因此增加了在一系列请求中发送的重复数据（每次交互的开销），可能会降低网络性能。此外，将应用状态放在客户端还降低了服务器对于一致的应用行为的控制能力，因为这样一来，应用就得依赖于跨多个客户端版本（semantics across multiple client versions）的语义的正确实现。</p>
+</blockquote>
+<p><em>顺带一提，原来我认为 cookie 应该是符合无状态的，因为它还是将内容存在客户端的，每次请求都需要携带。但《RESTful Web APIs》中点出了 cookie 的问题，作者认为：客户端一旦接受了一个 cookie，它就应该与随后一定时间内的所有请求一起提交给服务器。服务器也会要求客户端以后不能再发起在接受这个 cookie 之前曾经发起过的请求了。这也违反了无状态原则。</em></p>
+<h3 id="session-id-与-jwt-的取舍">Session ID 与 JWT 的取舍</h3>
+<p><strong>Session ID</strong></p>
+<p>先说 session ID 存在的问题，由于违反了无状态的架构约束，所以很明显的也就没有了可见性，可靠性，可伸缩性。</p>
+<ul>
+<li>可见性：客户端不可能在一堆混乱的字符串中得到有用信息，自然没有了可见性。</li>
+<li>可靠性：一旦发生故障，可能需要跨越多个请求的结果查询信息，增加了任务量。</li>
+<li>可伸缩性：这个词在论文中被提到过很多很多次了，客户-服务器改善了可伸缩性，无状态改善了可伸缩性，缓存改善了可伸缩性等等等等，可见可伸缩性在 Web 中的重要性了。那么 session ID 在哪方面对可伸缩性造成了影响呢？举个简单的例子：负载均衡。这个很常见对吧，做 Web 的应该都有接触，负载均衡就是很常见的横向的可伸缩性。session ID 在这种情况下，就有很明显的问题，他需要每个单元对其进行额外的处理，比如 session 的同步，或者 session 单独剥离出一个额外的单元，还需要为这个额外的单元考虑负载问题。</li>
+</ul>
+<p><strong>JWT</strong></p>
+<p>再说 JWT 的问题，符合了无状态的架构约束，上面的那三个架构属性都有所改善，问题也正是交互的开销问题，JWT 在有些时候要存储所有完整的会话是不现实的，这就需要存储资源ID，需要进行额外的处理。但是对比 session ID 来说，额外的资源存储要少很多。</p>
+<p><em>额外提一点，这里只讨论了 JWT 的自成一体这一机制，其他不讨论。</em></p>
+<p><strong>取舍</strong></p>
+<p>服务器没有了会话状态的保存，涉及到认证授权的一些问题，需要额外进行处理，例如注销，统计在线用户数量等问题。由于有这些问题的存在，处理后的 JWT 很可能变为另一个 session ID，但 session ID 在这方面更加成熟。所以，请根据自身的项目，采取适当的处理方式。</p>
+<h3 id="总结">总结</h3>
+<p>session ID 机制在网站中已经是一套很成熟的系统的。不遵守无状态架构约束所带来的后果也都有着大量的解决方案。JWT 这种符合无状态架构约束的机制，并没有带来很明显的效果，所以很难推广开来。</p>
+<p>但是，在 Web API 的领域，session ID 的问题被进一步的凸显，所以应该尽量选择符合无状态架构约束的机制。</p>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/-YnRsaDfq/" class="tag">
+                    REST
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/wzarT9Fa4G/" class="tag">
+                    API
+                  </a>
+                
+              </div>
+            
+            
+              <div class="next-post">
+                <div class="next">下一篇</div>
+                <a href="https://cnbailian.github.io/post/hypertext-friven-web-API/">
+                  <h3 class="post-title">
+                    超媒体驱动的 Web API
+                  </h3>
+                </a>
+              </div>
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>

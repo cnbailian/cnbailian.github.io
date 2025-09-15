@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="努力前行">
+    
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/kubernetes-dra/">
+                  <h2 class="post-title">关于 Kubernetes 动态资源分配（DRA）</h2>
+                </a>
+                <div class="post-date">
+                  2025-09-15
+                </div>
+                <div class="post-abstract">
+                  <p>DRA（Dynamic Resource Allocation） 的引入，标志着 Kubernetes 从“容器管理”向“资源智能管理”的重大演进。它不仅解决了现有资源管理模型的痛点，还为未来异构硬件和复杂工作负载提供了原生支持。在接下来的文章中，本文将深入探讨 DRA 的设计背景、核心架构与关键 KEP 细节，帮助开发者全面理解这一革命性框架。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/kubernetes-samplecontroller/">
+                  <h2 class="post-title">从 SampleController 项目看 kubernetes controller 的设计——笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-05-08
+                </div>
+                <div class="post-abstract">
+                  <p>Informer 和 Controller 工作流程总结。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/why-do-use-kubernetes-crd/">
+                  <h2 class="post-title">我们为什么要使用 Kubernetes 自定义资源</h2>
+                </a>
+                <div class="post-date">
+                  2021-05-08
+                </div>
+                <div class="post-abstract">
+                  <p>Kubernetes 提供了 CRD(CustomResourceDefinitions) 这种扩展方式满足了用户增强 Kubernetes 功能的需求，我们熟悉的 Kubernetes  Operator 也是基于这一机制而实现。</p>
+<p>本文想讨论的是我们要在什么时候使用 CRD 以及为什么要使用 CRD。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/go-stack-notes/">
+                  <h2 class="post-title">Go 栈笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-02-08
+                </div>
+                <div class="post-abstract">
+                  <p>本文用于持续记录 Go 栈相关源码学习笔记。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/kubernetes-network-notes/">
+                  <h2 class="post-title">Kubernetes 网络笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-02-07
+                </div>
+                <div class="post-abstract">
+                  <p>集群网络系统是 Kubernetes 的核心部分，其中 Pod 之间的通信的部分 Kubernetes 没有自己实现，而是交给了外部组件进行处理。Kubernetes 对这部分网络模型的要求是：节点上的 Pod 可以不通过 NAT 和其他任何节点上的 Pod 通信。这就需要一个跨主机的容器网络。</p>
+<p>本篇笔记前半部分记录了 VXLAN 技术。VXLAN 全称是 <code>Virtual eXtensible Local Area Network</code>，虚拟可扩展的局域网。它是一种 Overlay 技术，通过三层网络来搭建的二层网络。在笔记的后半部分，通过学习 <a href="https://github.com/coreos/flannel">Flannel</a> 的源码手动搭建跨主机容器网络示例。</p>
+<p>笔记中 vxlan 内容学习自 <a href="https://cizixs.com/about/">cizixs</a> 的两篇博客，一篇<a href="https://cizixs.com/2017/09/25/vxlan-protocol-introduction/">介绍协议原理</a>，一篇<a href="https://cizixs.com/2017/09/28/linux-vxlan/">结合实践</a>。文章写的很详细，而且深入浅出适合学习，建议读者在 vxlan 部分直接看原文。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/container-netwrok-notes/">
+                  <h2 class="post-title">容器网络学习笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-02-04
+                </div>
+                <div class="post-abstract">
+                  <p>容器技术涉及的知识点很多，包括进程隔离、容器网络、分层存储等等，我对其中容器网络部分很感兴趣，并有较为深入的学习。此篇文章用于记录我的学习笔记。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/go-runtime-notes/">
+                  <h2 class="post-title">Go Runtime 笔记</h2>
+                </a>
+                <div class="post-date">
+                  2021-01-25
+                </div>
+                <div class="post-abstract">
+                  <p>本文用于记录 Go 语言运行时及调度器方面源码的学习笔记。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/traefik-cannot-proxy-mysql/">
+                  <h2 class="post-title">记一次 Traefik 无法代理 MySQL 问题</h2>
+                </a>
+                <div class="post-date">
+                  2020-04-13
+                </div>
+                <div class="post-abstract">
+                  <p>Traefik 从 2.0 版本开始支持 TCP route，我也使用 Traefik 作为 kubernetes 集群的 Ingress，但是在使用过程中，发现 Traefik 为 MySQL 创建的 TCP route 无法正常工作，经过排查搜索后发现了官方人员关于这个疑惑的<a href="https://community.containo.us/t/v2-tcp-router-with-tls-example/2664">解答</a>，以下截取片段：</p>
+<blockquote>
+<p>But be careful: not all protocols based on TCP and using TLS supports the SNI routing or the passthrough. It requires the protocol supporting SNI (for instance MySQL doesn't) and doing a TLS handshake (if it is a STARTTLS, then it does not work).</p>
+</blockquote>
+<p>虽然找到了问题是由于 MySQL 不支持，但也勾起了我的好奇心，什么是 SNI？Traefik 为什么要使用 <code>HostSNI</code> 创建 TCP route 呢？为什么 MySQL 不支持 SNI 呢？于是带着这些问题，我开始寻找答案。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/kubernetes-cluster-autoscaler/">
+                  <h2 class="post-title">Kubernetes Cluster Autoscaler</h2>
+                </a>
+                <div class="post-date">
+                  2020-03-31
+                </div>
+                <div class="post-abstract">
+                  <p>当我们使用 Kubernetes 部署应用后，会发现如果用户增长速度超过预期，以至于计算资源不够时，你会怎么做呢？Kubernetes 给出的解决方案就是：自动伸缩（auto-scaling），通过自动伸缩组件之间的配合，可以 7*24 小时的监控着你的集群，动态变化负载，以适应你的用户需求。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+            <article class="post-item">
+              <div class="left">
+                <a href="https://cnbailian.github.io/post/dynamic-provisioning-of-kubernetes/">
+                  <h2 class="post-title">Kubernetes 的 Dynamic Provisioning 实现</h2>
+                </a>
+                <div class="post-date">
+                  2020-03-11
+                </div>
+                <div class="post-abstract">
+                  <p>存储一直是容器运行的关键部分，Kubernetes 为此做了很多努力，从一开始的 Pod Volumes、PV(Persistent Volumes) 与 PVC(Persistent Volume Claim)，到 StorageClass 与 Dynamic Provisioning，再到现在 “out-of-tree” 的 CSI(Container Storage Interface)，Kubernetes 社区一直在演进存储的实现。</p>
+<p>前面基础的就不讲了，我们从 StorageClass 与 Dynamic Provisioning 开始了解。</p>
+
+                </div>
+              </div>
+              
+            </article>
+          
+
+          <div class="pagination-container">
+  
+  
+    <a href="https://cnbailian.github.io/page/2" class="next">下一页 <i class="icon-arrow-ios-forward-outline"></i></a>
+  
+</div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+
+  </body>
+</html>

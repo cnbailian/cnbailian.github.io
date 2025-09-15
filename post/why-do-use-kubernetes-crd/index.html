@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" >
+
+<title>我们为什么要使用 Kubernetes 自定义资源 | 白联</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://cnbailian.github.io/favicon.ico?v=1757914248660">
+<link rel="stylesheet" href="https://cnbailian.github.io/styles/main.css">
+
+
+  
+
+  
+    <link rel="stylesheet" href="https://unpkg.com/disqusjs@1.1/dist/disqusjs.css" />
+  
+
+
+<link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-189065612-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'UA-189065612-1');
+</script>
+
+
+    <meta name="description" content="Kubernetes 提供了 CRD(CustomResourceDefinitions) 这种扩展方式满足了用户增强 Kubernetes 功能的需求，我们熟悉的 Kubernetes  Operator 也是基于这一机制而实现。
+本文想..." />
+    <meta name="keywords" content="REST,API,kubernetes" />
+  </head>
+  <body>
+    <div id="app" class="main">
+
+      <div class="sidebar" :class="{ 'full-height': menuVisible }">
+  <div class="top-container" data-aos="fade-right">
+    <div class="top-header-container">
+      <a class="site-title-container" href="https://cnbailian.github.io">
+        <img src="https://cnbailian.github.io/images/avatar.png?v=1757914248660" class="site-logo">
+        <h1 class="site-title">白联</h1>
+      </a>
+      <div class="menu-btn" @click="menuVisible = !menuVisible">
+        <div class="line"></div>
+      </div>
+    </div>
+    <div>
+      
+        
+          <a href="/" class="site-nav">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="site-nav">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="site-nav">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="site-nav">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+  <div class="bottom-container" data-aos="flip-up" data-aos-offset="0">
+    <div class="social-container">
+      
+        
+          <a class="social-link" href="https://github.com/cnbailian" target="_blank">
+            <i class="fab fa-github"></i>
+          </a>
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    </div>
+    <div class="site-description">
+      努力前行
+    </div>
+    <div class="site-footer">
+      Powered by <a href="https://github.com/getgridea/gridea" target="_blank">Gridea</a> | <a class="rss" href="https://cnbailian.github.io/atom.xml" target="_blank">RSS</a>
+    </div>
+  </div>
+</div>
+
+
+      <div class="main-container">
+        <div class="content-container" data-aos="fade-up">
+          <div class="post-detail">
+            <h2 class="post-title">我们为什么要使用 Kubernetes 自定义资源</h2>
+            <div class="post-date">2021-05-08</div>
+            
+            <div class="post-content" v-pre>
+              <p>Kubernetes 提供了 CRD(CustomResourceDefinitions) 这种扩展方式满足了用户增强 Kubernetes 功能的需求，我们熟悉的 Kubernetes  Operator 也是基于这一机制而实现。</p>
+<p>本文想讨论的是我们要在什么时候使用 CRD 以及为什么要使用 CRD。</p>
+<!--more-->
+<h2 id="我是否应该向我的-kubernetes-集群添加定制资源">我是否应该向我的 Kubernetes 集群添加定制资源？</h2>
+<p>表格是 <a href="https://kubernetes.io/zh/docs/concepts/extend-kubernetes/api-extension/custom-resources/#%E6%88%91%E6%98%AF%E5%90%A6%E5%BA%94%E8%AF%A5%E5%90%91%E6%88%91%E7%9A%84-kubernetes-%E9%9B%86%E7%BE%A4%E6%B7%BB%E5%8A%A0%E5%AE%9A%E5%88%B6%E8%B5%84%E6%BA%90">Kubernetes 官网</a>列出的选择 CRD 的场景，其中最重要的，也是难以理解的应该是<strong>声明式 API</strong>这一概念。</p>
+<table>
+<thead>
+<tr>
+<th>考虑 API 聚合的情况</th>
+<th>优选独立 API 的情况</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>你的 API 是<a href="https://kubernetes.io/zh/docs/concepts/extend-kubernetes/api-extension/custom-resources/#declarative-apis">声明式的</a>。</td>
+<td>你的 API 不符合<a href="https://kubernetes.io/zh/docs/concepts/extend-kubernetes/api-extension/custom-resources/#declarative-apis">声明式</a>模型。</td>
+</tr>
+<tr>
+<td>你希望可以是使用 <code>kubectl</code> 来读写你的新资源类别。</td>
+<td>不要求 <code>kubectl</code> 支持。</td>
+</tr>
+<tr>
+<td>你希望在 Kubernetes UI （如仪表板）中和其他内置类别一起查看你的新资源类别。</td>
+<td>不需要 Kubernetes UI 支持。</td>
+</tr>
+<tr>
+<td>你在开发新的 API。</td>
+<td>你已经有一个提供 API 服务的程序并且工作良好。</td>
+</tr>
+<tr>
+<td>你有意愿取接受 Kubernetes 对 REST 资源路径所作的格式限制，例如 API 组和名字空间。（参阅 <a href="https://kubernetes.io/zh/docs/concepts/overview/kubernetes-api/">API 概述</a>）</td>
+<td>你需要使用一些特殊的 REST 路径以便与已经定义的 REST API 保持兼容。</td>
+</tr>
+<tr>
+<td>你的资源可以自然地界定为集群作用域或集群中某个名字空间作用域。</td>
+<td>集群作用域或名字空间作用域这种二分法很不合适；你需要对资源路径的细节进行控制。</td>
+</tr>
+<tr>
+<td>你希望复用 <a href="https://kubernetes.io/zh/docs/concepts/extend-kubernetes/api-extension/custom-resources/#common-features">Kubernetes API 支持特性</a>。</td>
+<td>你不需要这类特性。</td>
+</tr>
+</tbody>
+</table>
+<h2 id="声明式">声明式</h2>
+<p>声明式指的是这么一种软件设计理念和做法：<strong>让我们的动作更偏向于描述，而不是命令</strong>。</p>
+<p>声明式（Declarative）通常是与命令式（Imperative）作对比，两者的侧重点不同。命令式编程会详细的命令工具怎么（How）去处理一件事情以达到你想要的结果（What）；声明式编程则是只告诉工具想要的结果（What），由工具自行决定怎么做（How）。</p>
+<img src="https://image.baidu.com/search/down?url=https://tva1.sinaimg.cn/large/008i3skNly1gq8n3f5etmj30f008374t.jpg" alt="img"  />
+<p>以生活中打车作为例子，我们在大多数时候并不会指挥司机师傅：走哪条街，前行多少米，在哪个路口转向；而是直接告诉师傅，我要去 XXX 地点。上述例子能看出命令式与声明式在生活中的体现，在编程中，我们大多数人首先接触到的都是命令式的编程语言，这就导致我们对声明式会有一些不理解。下面就用声明式在编程领域中的两个比较重要的成果来说明声明式的意义。</p>
+<h3 id="dsl">DSL</h3>
+<p>DSL 是 Domain Specific Language 的缩写，中文翻译为<strong>领域特定语言</strong>。与 DSL 相对的是 GPPL（General Purpose Programming Language，通用目的编程语言），也就是我们非常熟悉的 Java、C、Go 等编程语言。</p>
+<p>DSL 的定义并不是很明确，我们可以简单的理解为“为了解决某一类任务而专门设计的计算机语言”。最常见的 DSL 包括 SQL、HTML 和 CSS 等。</p>
+<p>所有的 DSL 都是声明式的，你写出一条 SQL 语句，只是告诉数据库想要的结果是什么，数据库会帮我们设计获取这个结果集的执行路径，并返回结果集。众所周知，使用 SQL 语言获取数据，要比自行编写处理过程去获取数据容易的多。</p>
+<pre><code class="language-sql">SELECT * from user WHERE user_name = Ben
+</code></pre>
+<p>Go 伪代码：</p>
+<pre><code class="language-go">users := get_users()
+for row, value := range users {
+  if value.user_name = &quot;Ben&quot; {
+    print(&quot;find&quot;)
+    break
+  }
+}
+</code></pre>
+<h4 id="内部-dsl">内部 DSL</h4>
+<p>上面提到的 SQL、HTML 和 CSS 等，属于外部 DSL。外部 DSL 是自我包含的语言，他有自己特定语法、解析器和词法分析器等等。与之相对的是内部 DSL，它使用的是宿主语言的抽象能力，更像是一种别称，代表着一类特别的 API 及使用模式。</p>
+<p>比如说 LINQ（C#）、 Ruby on Rails（Ruby）、jQuery（JavaScript）。它们共同的特点是，它们其实只是一系列 API，但是你可以“假装”它们是一种 DSL。不过，这种 DSL 模糊了框架和 DSL 的边界，因为两者看起来没有什么区别，我们也没有必要争论哪些是框架，哪些是 DSL，因为这些争论并没有什么意义。</p>
+<p><em>就我个人体验而言，如果脱离框架转而使用宿主语言实现同样功能时会感觉到不适应，那么可能就证明了这个框架拥有内部 DSL 的性质。</em></p>
+<h3 id="函数式编程">函数式编程</h3>
+<p>函数式编程就是声明式的另一个重要成果，它的编程形式更倾向于描述而不是执行命令，下面这个例子是 React 的声明式构建 UI：</p>
+<pre><code class="language-javascript">// 普通的 DOM API 构建 UI
+const div = document.createElement('div')
+const p = document.createElement('p')
+p.textContent = 'hello world'
+const UI = div.append(p)
+
+// React 构建 UI
+const h = React.craeteElement
+const UI = h('div', null, h('p', null, 'hello world'))
+</code></pre>
+<p>React 依托于 JavaScript，并不是完全的函数式编程语言，不过 Haskell 等函数式语言我也没有接触，所以并不能很好的理解。分享两篇文章，希望能一起学习。</p>
+<p><a href="http://blog.zhaojie.me/2010/05/trends-and-future-directions-in-programming-languages-by-anders-3-functional-programming-and-fsharp.html">编程语言的发展趋势及未来方向（3）：函数式编程</a></p>
+<p><a href="https://lutaonan.com/blog/declarative-programming-is-the-future/">未来属于声明式编程</a></p>
+<h2 id="kubernetes-声明式-api">Kubernetes 声明式 API</h2>
+<p>通过上述的例子，我们已经明白声明式的理念。Kubernetes 的声明式 API 正是使用了这种方法，<strong>我们向其描述我们想要让一个事物达到的期望状态，由 Kubernetes 内部去自行实现，令这个事物达成实际状态</strong>。</p>
+<p>声明式 API 基于 RESTful 的设计风格，将想要描述的事物抽象为资源，通过 CRUD 风格的操作方法修改资源对象的状态。这也正是 REST 的本质：<strong>资源表述性状态转移</strong>，通俗的讲就是：资源以某种表现形式进行状态转移。在 Kubernetes 中，自定义资源的表现形式是由 CRD 来定义。</p>
+<p><em>表现形式包含表示的格式，也包含表示的属性。格式在 Kubernetes 中有着统一的定义，所以我们在 CRD 中主要配置的是表示的属性，也就是对象的配置信息，我们想要对象达成的期望状态的相关属性。</em></p>
+<h3 id="关于-replace-和-apply">关于 replace 和 apply</h3>
+<p>通过上面对声明式和声明式 API 的理解，我们也就能更好的理解极客时间中张磊老师课程里所说的 replace 和 apply 的区别。replace 的语义主要体现在删除重建的命令上，而 apply 是对资源对象期望状态的更新。</p>
+<p>根据课程中的例子来更好的理解：</p>
+<pre><code class="language-yaml"># nginx.yaml 将 Nginx 容器镜像改为1.7.9
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.7.9
+</code></pre>
+<pre><code class="language-shell"># 这个命令所表达的语义，是要将 nginx 资源强制替换为修改后的资源
+# 明确表示了执行过程：先删除，然后重建
+$ kubectl replace -f nginx.yaml
+
+# 而 apply 则只表明更新 nginx 资源的期望状态，具体的实现过程，由其自行处理
+$ kubectl apply -f nginx.yaml
+</code></pre>
+<p>在实际的使用过程中，我们也要尽量避免使用 <code>replace -f</code> 命令，同时避免更新有上层抽象控制的底层资源对象。</p>
+<h3 id="声明式-api-特点">声明式 API 特点</h3>
+<p>现在我们也能更好的理解 <a href="https://kubernetes.io/zh/docs/concepts/extend-kubernetes/api-extension/custom-resources/#declarative-apis">Kubernetes 官网</a>中对于声明式 API 的一些说明，附带上一些我的理解：</p>
+<ul>
+<li>你的 API 包含相对而言为数不多的、尺寸较小的对象（资源）。
+<ul>
+<li><em>声明式重要的点在于描述，描述可以详细，但不应用于存储具体数据，应该描述其元数据。</em></li>
+</ul>
+</li>
+<li>对象定义了应用或者基础设施的配置信息。</li>
+<li>对象更新操作频率较低。</li>
+<li>通常需要人来读取或写入对象。</li>
+<li>对象的主要操作是 CRUD 风格的（创建、读取、更新和删除）。</li>
+<li>不需要跨对象的事务支持：API 对象代表的是期望状态而非确切实际状态。
+<ul>
+<li><em>也就是说我们在设计抽象资源时，如果该资源的创建需要依赖其他资源的实际状态，那么应该考虑将其归属于所依赖的资源。</em></li>
+</ul>
+</li>
+</ul>
+<p>也能更好的理解什么不是声明式 API：</p>
+<ul>
+<li>客户端发出“做这个操作”的指令，之后在该操作结束时获得同步响应。
+<ul>
+<li><em>声明式 API 的一个特点，声明的永远是期望状态，不能即时得到处理成功的响应。对实时性要求很高的场景是不合适的。</em></li>
+</ul>
+</li>
+<li>客户端发出“做这个操作”的指令，并获得一个操作 ID，之后需要检查一个 Operation（操作） 对象来判断请求是否成功完成。
+<ul>
+<li><em>我们要相信我们期望的状态是能达到的，并且不能在状态达成后才需要处理一些其他逻辑，如果是这样，应该考虑将这些逻辑放入声明式 API，或是放弃使用。</em></li>
+</ul>
+</li>
+<li>你会将你的 API 类比为远程过程调用（Remote Procedure Call，RPCs）。
+<ul>
+<li><em>这很明显，过程调用强调的是过程，如果你的 API 非常注重过程的处理，那就不适合声明式 API</em></li>
+</ul>
+</li>
+<li>直接存储大量数据；例如每个对象几 kB，或者存储上千个对象。</li>
+<li>需要较高的访问带宽（长期保持每秒数十个请求）。</li>
+<li>存储有应用来处理的最终用户数据（如图片、个人标识信息（PII）等）或者其他大规模数据。</li>
+<li>在对象上执行的常规操作并非 CRUD 风格。
+<ul>
+<li><em>对于声明式 API 而言，我们对资源对象的操作是有限的，仅能对其进行状态转移，这也就局限为 CRUD 操作。如果一项操作不能抽象为状态的改变，那么就证明不适合声明式 API。</em></li>
+</ul>
+</li>
+<li>API 不太容易用对象来建模。</li>
+<li>你决定使用操作 ID 或者操作对象来表现悬决的操作。
+<ul>
+<li><em>这里“悬决的操作”英文原文为&quot;pending operations&quot;，表达的应该是悬而未决的意思。然而需要挂起，就表示你知道这个操作在可控的范围内需要依赖于其他操作的完成，这是不符合声明式 API 要求的。</em></li>
+</ul>
+</li>
+</ul>
+<h2 id="控制器模式">控制器模式</h2>
+<p>从上面可以了解到，声明式 API 让我们可以描述资源对象的期望状态，那么 Kubernetes 内部是如何将期望状态转为实际状态的呢？答案就是 Kubernetes 的控制器模式。这是 kubernetes 的核心机制，也叫 Control Loop 或是 Reconcile Loop。</p>
+<p>以下是 <a href="https://kubernetes.io/zh/docs/concepts/architecture/controller/">Kubernetes 官网</a>对于 Control Loop 的解释，很详细：</p>
+<blockquote>
+<p>在机器人技术和自动化领域，控制回路（Control Loop）是一个非终止回路，用于调节系统状态。</p>
+<p>这是一个控制环的例子：房间里的温度自动调节器。</p>
+<p>当你设置了温度，告诉了温度自动调节器你的<em>期望状态（Desired State）</em>。 房间的实际温度是<em>当前状态（Current State）</em>。 通过对设备的开关控制，温度自动调节器让其当前状态接近期望状态。</p>
+</blockquote>
+<p>控制器模式指的就是这样一个控制循环，Kubernetes 中的控制器通过 “List&amp;Watch 机制” 实现对于 Kubernetes 中相关资源变化的关注，从而触发控制器逻辑的处理，完成最终用户的期望，并且实时更新资源的状态来告知用户。Kubernetes 自身的固有资源也都是通过这种形式来实现的。</p>
+<p>这个控制循环确保了实际状态与期望状态的一致性，而实际状态向期望状态逐渐转换的这个过程，叫做 Reconcile，所以控制循环也叫做调谐循环（Reconcile Loop）。正是由于 Reconcile 的存在，它不断的执行“检查 -&gt; Diff -&gt; 更新实际状态”这样一个过程，才使得这个系统能够始终对系统当前状态与期望状态对比差异并采取必要的行动。</p>
+<h4 id="期望状态与实际状态">期望状态与实际状态</h4>
+<blockquote>
+<p>Kubernetes 采用了系统的云原生视图，并且可以处理持续的变化。</p>
+<p>在任务执行时，集群随时都可能被修改，并且控制回路会自动修复故障。 这意味着很可能集群永远不会达到稳定状态。</p>
+<p>只要集群中的控制器在运行并且进行有效的修改，整体状态的稳定与否是无关紧要的。</p>
+</blockquote>
+<h3 id="关于控制器的实现原理">关于控制器的实现原理</h3>
+<p>限于篇幅，不讲了。感兴趣的可以看我的另一篇关于 Controller 原理和源码的笔记：<a href="/post/kubernetes-samplecontroller">《从 SampleController 项目看 kubernetes controller 的设计》</a>。</p>
+<h2 id="声明式的优点">声明式的优点</h2>
+<h3 id="可读性">可读性</h3>
+<p>声明式的描述通常比一连串的命令更具有可读性。</p>
+<h4 id="dsl-2">DSL</h4>
+<p>对于在 DSL 上的体现来说，DSL 通常比伪代码更接近自然语言，并且非程序员更容易学习。包括内部 DSL，通常也会比宿主语言实现同样功能的命令更加易读。</p>
+<h4 id="函数式编程-2">函数式编程</h4>
+<p>函数式编程也同样具有更高的可读性，因为所有的状态都是不可变的。你声明一个状态，但是不能改变这个状态。由于你无法改变它，所以在函数式编程中不需要变量。对函数式编程的讨论也更像是数学、公式，而不像是程序语句。</p>
+<pre><code class="language-c">x = x + 1
+</code></pre>
+<p>如果你把这行代码交给一个数学家去看，他会认为这是一个不成立的等式。如果用函数式编程的形式：</p>
+<pre><code class="language-c">y = x + 1
+</code></pre>
+<p>这个数学家就会明白 y 的值是 x + 1 的计算结果。并且它不会被改变，被声明之后，y 就永远代表的 x + 1。</p>
+<h4 id="声明式-api">声明式 API</h4>
+<p>面向终态的声明式 API 的可读性是毋庸置疑的，我们关注的就是对象最终的运行状态，现在可以通过对象的描述直接了解，而不用根据过程进行推算。</p>
+<h3 id="简单">简单</h3>
+<p>一段代码越简单，就越容易看懂并发现错误，也就越容易对系统进行修改。所以我们鼓励采用有意义的变量名，清晰的代码结构，整洁的系统架构等等。基于同样的理由，DSL 的本质就是<strong>通过简单来换取在某一领域内的高效</strong>。DSL 的简单体现在其有限的表达性上，它不需要做到万能，只相反，DSL 只需要解决系统某一领域内的问题。只有在这个领域内，DSL 才有用，也更推荐使用。</p>
+<h3 id="幂等性">幂等性</h3>
+<p>由于我们面向的最终状态，对状态修改的操作一定是幂等性的。因为没有副作用，所以对于重复操作的效果是稳定的，也就能更好的处理分布式环境和并发等问题。</p>
+<h3 id="可交换性">可交换性</h3>
+<p>上面也提到了，声明式 API 不需要跨对象的事务支持。换句话说，<strong>声明式 API 不需要事务中固定的执行顺序</strong>。因为我们描述的总是期望状态，所以在多个对象协作的场景中，对每个对象的创建或状态转移都是不需要保证执行顺序的。</p>
+<h3 id="关于控制器模式的优点">关于控制器模式的优点</h3>
+<p>当我们自己设计的 API 也经过良好的抽象，对外的表现形式与声明式 API 的表现形式一致时，我们为什么还要用 CRD 呢？</p>
+<p>这就需要我们对控制器模式的一些思考，控制器模式对比命令式的执行模型有哪些优点。</p>
+<p>在一次性的命令执行过程中，指令的执行失败是很难处理的，通常是响应错误后需要记录日志、报警及回滚等一系列操作。调用方在接收到响应错误时，也很难把握对象当前的状态，后续的处理也会很困难。</p>
+<p>而控制器模式是一个永不终止的循环，在这个循环中，控制器会通过观察对象状态，不断尝试调谐（Reconcile）以达成实际状态和期望状态的一致。这个过程是包含错误处理的流程，不需要调用方费心。调用方也可以通过对象的 status 字段实时查看对象的当前状态，以便于辅助处理。</p>
+<p><em>所以我认为当你的 API 足够声明式的时候，CRD 永远是首选项。</em></p>
+<h2 id="相关链接">相关链接</h2>
+<p><a href="https://skyao.io/learning-cloudnative/declarative/">声明式设计</a></p>
+<p><a href="http://blog.zhaojie.me/2010/04/trends-and-future-directions-in-programming-languages-by-anders-2-declarative-programming-and-dsl.html">编程语言的发展趋势及未来方向（2）：声明式编程与DSL</a></p>
+<p><a href="https://www.toptal.com/software/declarative-programming">Declarative Programming: Is It A Real Thing?</a></p>
+<p><a href="https://www.cnblogs.com/lisperl/archive/2011/11/21/2257360.html">浅析函数式编程与命令式编程的区别（一）计算模型的区别</a></p>
+<p><a href="https://draveness.me/dsl/">谈谈 DSL 以及 DSL 的应用（以 CocoaPods 为例）</a></p>
+<p><a href="https://i.cloudnative.to/oam/event">【网络研讨会】GitOps 及 OAM 的落地实践</a></p>
+
+            </div>
+            
+              <div class="tag-container">
+                
+                  <a href="https://cnbailian.github.io/tag/-YnRsaDfq/" class="tag">
+                    REST
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/wzarT9Fa4G/" class="tag">
+                    API
+                  </a>
+                
+                  <a href="https://cnbailian.github.io/tag/rKzMZCB0T/" class="tag">
+                    kubernetes
+                  </a>
+                
+              </div>
+            
+            
+              <div class="next-post">
+                <div class="next">下一篇</div>
+                <a href="https://cnbailian.github.io/post/go-stack-notes/">
+                  <h3 class="post-title">
+                    Go 栈笔记
+                  </h3>
+                </a>
+              </div>
+            
+
+            
+              
+
+              
+                <div id="disqus_thread" data-aos="fade-in"></div>
+              
+            
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+<script type="application/javascript">
+
+AOS.init();
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+  <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad()
+  </script>
+
+
+
+
+  
+
+  
+    <script src="https://unpkg.com/disqusjs@1.1/dist/disqus.js"></script>
+    <script>
+
+    var options = {
+      shortname: 'baiyi',
+      apikey: '',
+    }
+    if ('') {
+      options.api = ''
+    }
+    var dsqjs = new DisqusJS(options)
+
+    </script>
+  
+
+
+
+
+  </body>
+</html>
